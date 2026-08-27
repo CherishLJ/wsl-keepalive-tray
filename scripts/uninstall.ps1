@@ -22,6 +22,7 @@ if (Test-Path -LiteralPath $executable) {
     }
 }
 Get-Process -Name 'WSLKeepAliveTray' -ErrorAction SilentlyContinue | Stop-Process -Force
+Unregister-ScheduledTask -TaskName 'WSLKeepAliveTray-Startup' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'WSLKeepAliveTray' -ErrorAction SilentlyContinue
 
 wsl.exe -d $distro -u root -- systemctl disable --now wsl-tray-watchdog.timer 2>$null

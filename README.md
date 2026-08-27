@@ -42,7 +42,7 @@ cd wsl-keepalive-tray
 
 当前版本允许发行版名使用字母、数字、点、横线、下划线和加号；这是为了避免 `wsl.exe` 在 .NET Framework 下把引号误当成名称内容。
 
-安装位置默认为 `%LOCALAPPDATA%\Programs\WSLKeepAliveTray`。安装器会构建程序、安装 Linux 遥测 agent 与 systemd timer、注册当前用户登录自启，并在全部验证通过后禁用同名旧计划任务（如果存在）。
+安装位置默认为 `%LOCALAPPDATA%\Programs\WSLKeepAliveTray`。安装器会构建程序、安装 Linux 遥测 agent 与 systemd timer、注册当前用户登录自启，并在全部验证通过后禁用同名旧计划任务（如果存在）。登录自启任务只在用户登录时触发，直接运行无控制台窗口的托盘 EXE；不包含定时触发，也不以 CMD 或 PowerShell 作为任务动作。
 
 ## Watchdog 配置
 

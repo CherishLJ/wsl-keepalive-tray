@@ -169,6 +169,26 @@ namespace WSLKeepAliveTray
                 failures += Check(report,
                     terminalArguments.IndexOf("wt.exe", StringComparison.OrdinalIgnoreCase) < 0,
                     "terminal bypasses Windows Terminal forwarding");
+                string startupScript = AutostartManager.BuildRegistrationScript(
+                    @"C:\Program Files\WSLKeepAliveTray\WSLKeepAliveTray.exe",
+                    "Ubuntu-24.04",
+                    @"DESKTOP\User");
+                failures += Check(report,
+                    startupScript.IndexOf("New-ScheduledTaskTrigger -AtLogOn", StringComparison.Ordinal) >= 0,
+                    "autostart uses a logon-only trigger");
+                failures += Check(report,
+                    startupScript.IndexOf("New-ScheduledTaskAction -Execute 'C:\\Program Files\\WSLKeepAliveTray\\WSLKeepAliveTray.exe'", StringComparison.Ordinal) >= 0,
+                    "autostart launches the tray executable directly");
+                failures += Check(report,
+                    startupScript.IndexOf("-Once", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    startupScript.IndexOf("CurrentVersion\\Run", StringComparison.OrdinalIgnoreCase) < 0,
+                    "autostart has no periodic trigger or Run-key dependency");
+                failures += Check(report,
+                    AutostartManager.IsTaskXmlEnabled("<Task><Settings /></Task>"),
+                    "autostart accepts Task Scheduler's default enabled state");
+                failures += Check(report,
+                    !AutostartManager.IsTaskXmlEnabled("<Task><Settings><Enabled>false</Enabled></Settings></Task>"),
+                    "autostart detects a disabled task");
             }
             catch (Exception ex)
             {

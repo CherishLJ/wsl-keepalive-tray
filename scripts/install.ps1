@@ -11,6 +11,7 @@ $executableSource = Join-Path $buildDirectory 'WSLKeepAliveTray.exe'
 $executableTarget = Join-Path $InstallDirectory 'WSLKeepAliveTray.exe'
 $backupDirectory = Join-Path $InstallDirectory 'backup'
 $taskName = "WSL-$Distro-KeepAlive"
+$startupTaskName = 'WSLKeepAliveTray-Startup'
 $statePath = Join-Path $InstallDirectory 'install-state.json'
 $previousState = if (Test-Path -LiteralPath $statePath) {
     Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
@@ -108,9 +109,37 @@ Copy-Item -LiteralPath $executableSource -Destination $executableTarget -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\app.ico') -Destination (Join-Path $InstallDirectory 'app.ico') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $InstallDirectory 'README.md') -Force
 
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-New-Item -Path $runKey -Force | Out-Null
-Set-ItemProperty -Path $runKey -Name 'WSLKeepAliveTray' -Value ('"' + $executableTarget + '" --distro "' + $Distro.Replace('"', '') + '"')
+$startupAction = New-ScheduledTaskAction `
+    -Execute $executableTarget `
+    -Argument ('--distro ' + $Distro.Replace('"', '')) `
+    -WorkingDirectory $InstallDirectory
+$startupTrigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+$startupPrincipal = New-ScheduledTaskPrincipal `
+    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -LogonType Interactive `
+    -RunLevel Limited
+$startupSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -MultipleInstances IgnoreNew `
+    -RestartCount 3 `
+    -RestartInterval ([TimeSpan]::FromMinutes(1)) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
+Register-ScheduledTask `
+    -TaskName $startupTaskName `
+    -Action $startupAction `
+    -Trigger $startupTrigger `
+    -Principal $startupPrincipal `
+    -Settings $startupSettings `
+    -Description 'Starts the console-free WSL KeepAlive Tray at user logon.' `
+    -Force | Out-Null
+
+# Remove the legacy Run entry only after the replacement task is registered successfully.
+Remove-ItemProperty `
+    -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' `
+    -Name 'WSLKeepAliveTray' `
+    -ErrorAction SilentlyContinue
 Start-Process -FilePath $executableTarget -ArgumentList @('--distro', $Distro) -WindowStyle Hidden
 
 $appReady = $false
@@ -136,6 +165,7 @@ if ($existingTask) {
 }
 
 Write-Output "INSTALL_OK executable=$executableTarget"
+Write-Output "AUTOSTART_TASK=$startupTaskName"
 Write-Output "TIMER=$timerState"
 $containerRows
 if ($existingTask) { Write-Output "LEGACY_TASK=Disabled (wasEnabled=$taskWasEnabled)" }
