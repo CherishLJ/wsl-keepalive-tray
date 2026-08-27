@@ -15,6 +15,7 @@
 - 右键菜单显示 CPU、1/5/15 分钟负载、内存、Swap、根盘、磁盘吞吐、网络吞吐、Docker、SSH 和 watchdog 状态。
 - 双击打开实时监控面板，查看最近约四分钟的趋势。
 - 支持立即健康检查、打开终端、启动、重启和停止 WSL。
+- 安装后可在开始菜单搜索“WSL KeepAlive Tray”重新启动并打开监控面板。
 - systemd timer 每五分钟检查可配置的服务和 Docker 容器。
 - 使用 Windows GUI 子系统并重定向所有标准句柄，不创建 CMD 或 PowerShell 窗口。
 
@@ -42,7 +43,7 @@ cd wsl-keepalive-tray
 
 当前版本允许发行版名使用字母、数字、点、横线、下划线和加号；这是为了避免 `wsl.exe` 在 .NET Framework 下把引号误当成名称内容。
 
-安装位置默认为 `%LOCALAPPDATA%\Programs\WSLKeepAliveTray`。安装器会构建程序、安装 Linux 遥测 agent 与 systemd timer、注册当前用户登录自启，并在全部验证通过后禁用同名旧计划任务（如果存在）。登录自启任务只在用户登录时触发，直接运行无控制台窗口的托盘 EXE；不包含定时触发，也不以 CMD 或 PowerShell 作为任务动作。
+安装位置默认为 `%LOCALAPPDATA%\Programs\WSLKeepAliveTray`。安装器会构建程序、安装 Linux 遥测 agent 与 systemd timer、创建当前用户开始菜单快捷方式、注册当前用户登录自启，并在全部验证通过后禁用同名旧计划任务（如果存在）。登录自启任务只在用户登录时触发，直接运行无控制台窗口的托盘 EXE；不包含定时触发，也不以 CMD 或 PowerShell 作为任务动作。
 
 ## Watchdog 配置
 
@@ -94,7 +95,7 @@ sudo systemctl status wsl-tray-watchdog.service
 .\scripts\uninstall.ps1
 ```
 
-卸载器会退出托盘、删除本项目安装的 agent 和 systemd 单元、移除登录自启，并在旧计划任务首次安装前处于启用状态时重新启用它。watchdog 配置文件会保留，便于重新安装。
+卸载器会退出托盘、删除本项目安装的 agent 和 systemd 单元、移除登录自启及本项目拥有的开始菜单快捷方式，并在旧计划任务首次安装前处于启用状态时重新启用它。watchdog 配置文件会保留，便于重新安装。
 
 ## 工作原理
 

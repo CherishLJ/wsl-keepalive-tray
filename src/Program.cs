@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -12,6 +13,8 @@ namespace WSLKeepAliveTray
         private const string ShowEventName = @"Local\WSLKeepAliveTray.ShowDashboard";
         private const string ExitEventName = @"Local\WSLKeepAliveTray.Exit";
         private const string ExitAndStopEventName = @"Local\WSLKeepAliveTray.ExitAndStop";
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 
         [STAThread]
         private static void Main(string[] args)
@@ -19,6 +22,24 @@ namespace WSLKeepAliveTray
             if (HasArgument(args, "--self-test"))
             {
                 Environment.ExitCode = RunSelfTest(GetValueAfter(args, "--self-test"));
+                return;
+            }
+            if (HasArgument(args, "--install-start-menu-shortcut"))
+            {
+                RunShortcutCommand(delegate
+                {
+                    StartMenuShortcutManager.Install(
+                        Application.ExecutablePath,
+                        NormalizeDistro(GetOptionalValueAfter(args, "--distro")));
+                });
+                return;
+            }
+            if (HasArgument(args, "--remove-start-menu-shortcut"))
+            {
+                RunShortcutCommand(delegate
+                {
+                    StartMenuShortcutManager.RemoveIfOwned(Application.ExecutablePath);
+                });
                 return;
             }
             if (HasArgument(args, "--quit"))
@@ -30,6 +51,12 @@ namespace WSLKeepAliveTray
             {
                 SignalEvent(ExitAndStopEventName);
                 return;
+            }
+
+            int appIdResult = SetCurrentProcessExplicitAppUserModelID(StartMenuShortcutManager.AppUserModelId);
+            if (appIdResult < 0)
+            {
+                Marshal.ThrowExceptionForHR(appIdResult);
             }
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -72,6 +99,20 @@ namespace WSLKeepAliveTray
                 if (string.Equals(value, expected, StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
+        }
+
+        private static void RunShortcutCommand(Action command)
+        {
+            try
+            {
+                command();
+                Environment.ExitCode = 0;
+            }
+            catch (Exception ex)
+            {
+                AppLog.Write("开始菜单快捷方式操作失败: " + ex);
+                Environment.ExitCode = 1;
+            }
         }
 
         private static string GetValueAfter(string[] args, string expected)
@@ -189,6 +230,25 @@ namespace WSLKeepAliveTray
                 failures += Check(report,
                     !AutostartManager.IsTaskXmlEnabled("<Task><Settings><Enabled>false</Enabled></Settings></Task>"),
                     "autostart detects a disabled task");
+                failures += Check(report,
+                    StartMenuShortcutManager.BuildArguments("Ubuntu-24.04") ==
+                        "--show --distro Ubuntu-24.04",
+                    "Start menu shortcut opens the dashboard for the selected distro");
+                failures += Check(report,
+                    StartMenuShortcutManager.ShortcutPath.EndsWith(
+                        StartMenuShortcutManager.ShortcutName,
+                        StringComparison.OrdinalIgnoreCase),
+                    "Start menu shortcut uses the current-user Programs folder");
+                failures += Check(report,
+                    StartMenuShortcutManager.PathsEqual(
+                        @"C:\Program Files\WSLKeepAliveTray\WSLKeepAliveTray.exe",
+                        @"c:\program files\wslkeepalivetray\WSLKeepAliveTray.exe"),
+                    "Start menu shortcut ownership is path-specific and case-insensitive");
+                failures += Check(report,
+                    !StartMenuShortcutManager.PathsEqual(
+                        @"C:\Program Files\WSLKeepAliveTray\WSLKeepAliveTray.exe",
+                        @"C:\Program Files\OtherApp\OtherApp.exe"),
+                    "Start menu shortcut ownership rejects unrelated targets");
             }
             catch (Exception ex)
             {

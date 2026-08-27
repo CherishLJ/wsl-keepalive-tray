@@ -12,6 +12,9 @@ $executableTarget = Join-Path $InstallDirectory 'WSLKeepAliveTray.exe'
 $backupDirectory = Join-Path $InstallDirectory 'backup'
 $taskName = "WSL-$Distro-KeepAlive"
 $startupTaskName = 'WSLKeepAliveTray-Startup'
+$startMenuShortcut = Join-Path `
+    ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) `
+    'WSL KeepAlive Tray.lnk'
 $statePath = Join-Path $InstallDirectory 'install-state.json'
 $previousState = if (Test-Path -LiteralPath $statePath) {
     Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
@@ -109,13 +112,53 @@ Copy-Item -LiteralPath $executableSource -Destination $executableTarget -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\app.ico') -Destination (Join-Path $InstallDirectory 'app.ico') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $InstallDirectory 'README.md') -Force
 
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$shortcutTaskName = 'WSLKeepAliveTray-InstallShortcut-' + [Guid]::NewGuid().ToString('N')
+$shortcutTaskAction = New-ScheduledTaskAction `
+    -Execute $executableTarget `
+    -Argument ('--install-start-menu-shortcut --distro ' + $Distro.Replace('"', '')) `
+    -WorkingDirectory $InstallDirectory
+$shortcutTaskPrincipal = New-ScheduledTaskPrincipal `
+    -UserId $currentUser `
+    -LogonType Interactive `
+    -RunLevel Limited
+$shortcutTaskSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -MultipleInstances IgnoreNew `
+    -ExecutionTimeLimit ([TimeSpan]::FromMinutes(1))
+$shortcutTaskResult = $null
+try {
+    Register-ScheduledTask `
+        -TaskName $shortcutTaskName `
+        -Action $shortcutTaskAction `
+        -Principal $shortcutTaskPrincipal `
+        -Settings $shortcutTaskSettings `
+        -Description 'One-time creation of the WSL KeepAlive Tray Start menu shortcut.' | Out-Null
+    Start-ScheduledTask -TaskName $shortcutTaskName
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $shortcutTask = Get-ScheduledTask -TaskName $shortcutTaskName
+        $shortcutTaskInfo = Get-ScheduledTaskInfo -TaskName $shortcutTaskName
+        if ($shortcutTask.State -ne 'Running' -and $shortcutTaskInfo.LastRunTime.Year -gt 2000) {
+            $shortcutTaskResult = $shortcutTaskInfo.LastTaskResult
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
+} finally {
+    Unregister-ScheduledTask -TaskName $shortcutTaskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+if ($shortcutTaskResult -ne 0 -or -not (Test-Path -LiteralPath $startMenuShortcut)) {
+    throw 'The Start menu shortcut failed verification.'
+}
+
 $startupAction = New-ScheduledTaskAction `
     -Execute $executableTarget `
     -Argument ('--distro ' + $Distro.Replace('"', '')) `
     -WorkingDirectory $InstallDirectory
-$startupTrigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+$startupTrigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
 $startupPrincipal = New-ScheduledTaskPrincipal `
-    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -UserId $currentUser `
     -LogonType Interactive `
     -RunLevel Limited
 $startupSettings = New-ScheduledTaskSettingsSet `
@@ -165,6 +208,7 @@ if ($existingTask) {
 }
 
 Write-Output "INSTALL_OK executable=$executableTarget"
+Write-Output "START_MENU_SHORTCUT=$startMenuShortcut"
 Write-Output "AUTOSTART_TASK=$startupTaskName"
 Write-Output "TIMER=$timerState"
 $containerRows

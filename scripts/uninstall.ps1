@@ -14,6 +14,9 @@ $statePath = Join-Path $resolvedDirectory 'install-state.json'
 $state = if (Test-Path -LiteralPath $statePath) { Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } else { $null }
 $distro = if ($state -and $state.distro) { [string]$state.distro } else { 'Ubuntu-24.04' }
 $executable = Join-Path $resolvedDirectory 'WSLKeepAliveTray.exe'
+$startMenuShortcut = Join-Path `
+    ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) `
+    'WSL KeepAlive Tray.lnk'
 
 if (Test-Path -LiteralPath $executable) {
     Start-Process -FilePath $executable -ArgumentList '--quit' -WindowStyle Hidden
@@ -24,6 +27,21 @@ if (Test-Path -LiteralPath $executable) {
 Get-Process -Name 'WSLKeepAliveTray' -ErrorAction SilentlyContinue | Stop-Process -Force
 Unregister-ScheduledTask -TaskName 'WSLKeepAliveTray-Startup' -Confirm:$false -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'WSLKeepAliveTray' -ErrorAction SilentlyContinue
+
+if (Test-Path -LiteralPath $executable) {
+    $shortcutRemoval = Start-Process `
+        -FilePath $executable `
+        -ArgumentList '--remove-start-menu-shortcut' `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    if ($shortcutRemoval.ExitCode -ne 0) {
+        throw 'Failed to remove the Start menu shortcut safely.'
+    }
+}
+if (Test-Path -LiteralPath $startMenuShortcut) {
+    Write-Warning "Preserved a Start menu shortcut not owned by this installation: $startMenuShortcut"
+}
 
 wsl.exe -d $distro -u root -- systemctl disable --now wsl-tray-watchdog.timer 2>$null
 wsl.exe -d $distro -u root -- rm -f /etc/systemd/system/wsl-tray-watchdog.timer /etc/systemd/system/wsl-tray-watchdog.service /usr/local/sbin/wsl-tray-agent
