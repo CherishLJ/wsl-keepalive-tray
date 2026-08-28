@@ -16,7 +16,6 @@
 - 双击打开实时监控面板，查看最近约四分钟的趋势。
 - 支持立即健康检查、打开终端、启动、重启和停止 WSL。
 - systemd timer 每五分钟检查可配置的服务和 Docker 容器。
-- 修正 WSL 只读 `WSLInterop` 项造成的 `systemd-binfmt` 假失败；原注册逻辑仍照常执行。
 - 使用 Windows GUI 子系统并重定向所有标准句柄，不创建 CMD 或 PowerShell 窗口。
 
 ## 系统要求
