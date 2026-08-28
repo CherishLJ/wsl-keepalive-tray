@@ -1,0 +1,8 @@
+[Unit]
+Description=WSL tray service and container health check
+After=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wsl-tray-watchdog
+TimeoutStartSec=90

@@ -1,0 +1,22 @@
+# Build and package output
+build/
+dist/
+outputs/
+
+# Visual Studio / .NET
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.pdb
+__pycache__/
+*.pyc
+
+# Local logs and test output
+*.log
+*.tmp
+
+# OS metadata
+Thumbs.db
+.DS_Store

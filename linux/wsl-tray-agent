@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""Persistent WSL keepalive and telemetry stream.
+
+Emits one compact JSON object per line. Uses only the Python standard library
+and Linux procfs so it stays inexpensive and survives package upgrades.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import signal
+import subprocess
+import time
+from typing import Dict, Optional, Tuple
+
+
+SCHEMA_VERSION = 1
+SECTOR_SIZE = 512
+
+
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as stream:
+        return stream.read()
+
+
+def _run(command: list[str], timeout: float = 3.0) -> Tuple[int, str, str]:
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
+    except Exception as exc:  # telemetry must never terminate on an optional probe
+        return 255, "", str(exc)
+
+
+class Sampler:
+    def __init__(self) -> None:
+        self.previous_cpu: Optional[Tuple[int, int]] = None
+        self.previous_disk: Optional[Tuple[int, int]] = None
+        self.previous_network: Optional[Tuple[int, int]] = None
+        self.previous_time: Optional[float] = None
+        self.service_cache: Dict[str, object] = {}
+        self.service_cache_time = 0.0
+
+    @staticmethod
+    def _cpu_counters() -> Tuple[int, int]:
+        fields = _read_text("/proc/stat").splitlines()[0].split()[1:]
+        values = [int(value) for value in fields]
+        idle = values[3] + (values[4] if len(values) > 4 else 0)
+        return sum(values), idle
+
+    @staticmethod
+    def _memory() -> Dict[str, int]:
+        values: Dict[str, int] = {}
+        for line in _read_text("/proc/meminfo").splitlines():
+            key, raw = line.split(":", 1)
+            token = raw.strip().split()[0]
+            values[key] = int(token) * 1024
+        total = values.get("MemTotal", 0)
+        available = values.get("MemAvailable", values.get("MemFree", 0))
+        swap_total = values.get("SwapTotal", 0)
+        swap_free = values.get("SwapFree", 0)
+        return {
+            "memoryTotalBytes": total,
+            "memoryUsedBytes": max(0, total - available),
+            "swapTotalBytes": swap_total,
+            "swapUsedBytes": max(0, swap_total - swap_free),
+        }
+
+    @staticmethod
+    def _root_disk_counters() -> Tuple[int, int]:
+        device = os.stat("/").st_dev
+        target_major, target_minor = os.major(device), os.minor(device)
+        for line in _read_text("/proc/diskstats").splitlines():
+            fields = line.split()
+            if len(fields) < 10:
+                continue
+            if int(fields[0]) == target_major and int(fields[1]) == target_minor:
+                return int(fields[5]) * SECTOR_SIZE, int(fields[9]) * SECTOR_SIZE
+        return 0, 0
+
+    @staticmethod
+    def _default_interface() -> str:
+        for line in _read_text("/proc/net/route").splitlines()[1:]:
+            fields = line.split()
+            if len(fields) >= 4 and fields[1] == "00000000":
+                return fields[0]
+        return "eth0"
+
+    @classmethod
+    def _network_counters(cls) -> Tuple[str, int, int]:
+        interface = cls._default_interface()
+        for line in _read_text("/proc/net/dev").splitlines()[2:]:
+            name, values = line.split(":", 1)
+            if name.strip() != interface:
+                continue
+            fields = values.split()
+            return interface, int(fields[0]), int(fields[8])
+        return interface, 0, 0
+
+    def _services(self, now: float) -> Dict[str, object]:
+        if self.service_cache and now - self.service_cache_time < 10.0:
+            return dict(self.service_cache)
+
+        systemd_code, systemd_state, _ = _run(["systemctl", "is-system-running"])
+        _, docker_state, docker_error = _run(["systemctl", "is-active", "docker.service"])
+        _, ssh_state, ssh_error = _run(["systemctl", "is-active", "ssh.service"])
+        _, timer_state, _ = _run(["systemctl", "is-active", "wsl-tray-watchdog.timer"])
+
+        docker_code, docker_rows, docker_command_error = _run(
+            ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.State}}"], timeout=5.0
+        )
+        total = 0
+        running = 0
+        names = []
+        if docker_code == 0:
+            for row in docker_rows.splitlines():
+                if not row.strip():
+                    continue
+                parts = row.split("\t", 1)
+                total += 1
+                names.append(parts[0])
+                if len(parts) > 1 and parts[1].strip().lower() == "running":
+                    running += 1
+
+        error = docker_command_error or docker_error or ssh_error
+        self.service_cache = {
+            "systemdState": systemd_state or ("running" if systemd_code == 0 else "unknown"),
+            "dockerActive": docker_state == "active",
+            "sshActive": ssh_state == "active",
+            "watchdogTimerActive": timer_state == "active",
+            "containersRunning": running,
+            "containersTotal": total,
+            "containerNames": names,
+            "serviceError": error,
+        }
+        self.service_cache_time = now
+        return dict(self.service_cache)
+
+    def sample(self) -> Dict[str, object]:
+        now = time.monotonic()
+        cpu_total, cpu_idle = self._cpu_counters()
+        disk_read, disk_write = self._root_disk_counters()
+        interface, network_receive, network_transmit = self._network_counters()
+
+        cpu_percent = 0.0
+        disk_read_rate = 0.0
+        disk_write_rate = 0.0
+        network_receive_rate = 0.0
+        network_transmit_rate = 0.0
+        if self.previous_time is not None:
+            elapsed = max(0.001, now - self.previous_time)
+            if self.previous_cpu is not None:
+                total_delta = max(0, cpu_total - self.previous_cpu[0])
+                idle_delta = max(0, cpu_idle - self.previous_cpu[1])
+                if total_delta:
+                    cpu_percent = max(0.0, min(100.0, 100.0 * (total_delta - idle_delta) / total_delta))
+            if self.previous_disk is not None:
+                disk_read_rate = max(0.0, (disk_read - self.previous_disk[0]) / elapsed)
+                disk_write_rate = max(0.0, (disk_write - self.previous_disk[1]) / elapsed)
+            if self.previous_network is not None:
+                network_receive_rate = max(0.0, (network_receive - self.previous_network[0]) / elapsed)
+                network_transmit_rate = max(0.0, (network_transmit - self.previous_network[1]) / elapsed)
+
+        self.previous_cpu = (cpu_total, cpu_idle)
+        self.previous_disk = (disk_read, disk_write)
+        self.previous_network = (network_receive, network_transmit)
+        self.previous_time = now
+
+        memory = self._memory()
+        root = shutil.disk_usage("/")
+        load1, load5, load15 = os.getloadavg()
+        uptime_seconds = float(_read_text("/proc/uptime").split()[0])
+
+        result: Dict[str, object] = {
+            "schemaVersion": SCHEMA_VERSION,
+            "timestampUnixMs": int(time.time() * 1000),
+            "hostname": os.uname().nodename,
+            "kernel": os.uname().release,
+            "uptimeSeconds": uptime_seconds,
+            "cpuPercent": round(cpu_percent, 2),
+            "processorCount": os.cpu_count() or 1,
+            "load1": round(load1, 3),
+            "load5": round(load5, 3),
+            "load15": round(load15, 3),
+            "diskReadBytesPerSecond": int(disk_read_rate),
+            "diskWriteBytesPerSecond": int(disk_write_rate),
+            "networkInterface": interface,
+            "networkReceiveBytesPerSecond": int(network_receive_rate),
+            "networkTransmitBytesPerSecond": int(network_transmit_rate),
+            "rootTotalBytes": root.total,
+            "rootUsedBytes": root.used,
+        }
+        result.update(memory)
+        result.update(self._services(now))
+        return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="WSL tray keepalive telemetry agent")
+    parser.add_argument("--interval", type=float, default=2.0)
+    parser.add_argument("--once", action="store_true")
+    args = parser.parse_args()
+    interval = max(0.5, min(60.0, args.interval))
+
+    stopping = False
+
+    def stop(_signum: int, _frame: object) -> None:
+        nonlocal stopping
+        stopping = True
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    sampler = Sampler()
+    if args.once:
+        sampler.sample()
+        time.sleep(min(0.25, interval))
+        print(json.dumps(sampler.sample(), ensure_ascii=False, separators=(",", ":")), flush=True)
+        return 0
+
+    while not stopping:
+        started = time.monotonic()
+        try:
+            payload = sampler.sample()
+            print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "schemaVersion": SCHEMA_VERSION,
+                        "timestampUnixMs": int(time.time() * 1000),
+                        "agentError": str(exc),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+        remaining = interval - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

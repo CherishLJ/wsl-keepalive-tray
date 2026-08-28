@@ -1,0 +1,6 @@
+# Space-separated systemd units to keep active when they exist.
+WATCHDOG_SERVICES="docker.service ssh.service"
+
+# Optional space-separated Docker container names to start when stopped.
+# Containers with a Docker restart policy normally do not need to be listed.
+WATCHDOG_CONTAINERS=""

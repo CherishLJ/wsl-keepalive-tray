@@ -1,0 +1,40 @@
+#!/bin/sh
+# Repair selected systemd services and optional Docker containers inside WSL.
+
+set -u
+
+CONFIG_FILE=/etc/default/wsl-keepalive-tray
+WATCHDOG_SERVICES="docker.service ssh.service"
+WATCHDOG_CONTAINERS=""
+
+if [ -r "$CONFIG_FILE" ]; then
+    # This file is administrator-owned and uses simple shell assignments.
+    . "$CONFIG_FILE"
+fi
+
+failed=0
+
+for service in $WATCHDOG_SERVICES; do
+    if ! systemctl cat "$service" >/dev/null 2>&1; then
+        continue
+    fi
+    if ! systemctl is-active --quiet "$service"; then
+        systemctl start "$service" || failed=1
+    fi
+    systemctl is-active --quiet "$service" || failed=1
+done
+
+if [ -n "$WATCHDOG_CONTAINERS" ] && command -v docker >/dev/null 2>&1; then
+    for container in $WATCHDOG_CONTAINERS; do
+        if ! docker inspect "$container" >/dev/null 2>&1; then
+            failed=1
+            continue
+        fi
+        running=$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)
+        if [ "$running" != "true" ]; then
+            docker start "$container" >/dev/null || failed=1
+        fi
+    done
+fi
+
+exit "$failed"
