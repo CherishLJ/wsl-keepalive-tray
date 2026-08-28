@@ -159,6 +159,16 @@ namespace WSLKeepAliveTray
                 {
                     failures += Check(report, icon.Width > 0 && icon.Height > 0, "icon generation");
                 }
+                string terminalArguments = WslAgentSupervisor.BuildInteractiveWslArguments("Ubuntu-24.04");
+                failures += Check(report,
+                    terminalArguments == "-d Ubuntu-24.04 --cd ~",
+                    "terminal preserves distro and home directory");
+                failures += Check(report,
+                    terminalArguments.IndexOf('"') < 0,
+                    "terminal avoids quoted distro name");
+                failures += Check(report,
+                    terminalArguments.IndexOf("wt.exe", StringComparison.OrdinalIgnoreCase) < 0,
+                    "terminal bypasses Windows Terminal forwarding");
             }
             catch (Exception ex)
             {

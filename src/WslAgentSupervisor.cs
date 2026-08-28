@@ -276,15 +276,24 @@ namespace WSLKeepAliveTray
             try
             {
                 ProcessStartInfo info = new ProcessStartInfo();
-                info.FileName = "wt.exe";
-                info.Arguments = "-w 0 new-tab --title " + distro + " wsl.exe -d " + distro + " --cd ~";
-                info.UseShellExecute = true;
-                Process.Start(info);
+                info.FileName = wslExe;
+                info.Arguments = BuildInteractiveWslArguments(distro);
+                info.UseShellExecute = false;
+                info.CreateNoWindow = false;
+                if (Process.Start(info) == null)
+                {
+                    throw new InvalidOperationException("wsl.exe could not be started.");
+                }
             }
             catch (Exception ex)
             {
                 RaiseOperation("打开终端", false, ex.Message);
             }
+        }
+
+        internal static string BuildInteractiveWslArguments(string distroName)
+        {
+            return "-d " + distroName + " --cd ~";
         }
 
         private void StopAgentProcess()
