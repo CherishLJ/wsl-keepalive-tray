@@ -14,6 +14,9 @@
 - 托盘悬停显示 WSL 状态、CPU、内存和网络吞吐。
 - 右键菜单显示 CPU、1/5/15 分钟负载、内存、Swap、根盘、磁盘吞吐、网络吞吐、Docker、SSH 和 watchdog 状态。
 - 双击打开实时监控面板，查看最近约四分钟的趋势。
+- 五套深林印象主题与品牌图标，支持即时切换、记住选择，修复高 DPI 下的文字裁切与布局重叠。详见 [主题说明](THEMES.md)。
+- DSH 服务状态与网页就绪监控，提供手动启动、停止、重启、刷新和打开网页。
+- DSH 任务看板：搜索与筛选会话、目录分组、父子会话和待办步骤；支持重命名、复制分支、中止本轮及本地隐藏/恢复。详见 [看板说明](BOARD.md)。
 - 支持立即健康检查、打开终端、启动、重启和停止 WSL。
 - 安装后可在开始菜单搜索“WSL KeepAlive Tray”重新启动并打开监控面板。
 - systemd timer 每五分钟检查可配置的服务和 Docker 容器。
@@ -26,6 +29,7 @@
 - WSL 内有 Python 3。
 - .NET Framework 4.8 运行时；Windows 11 默认包含。
 - Docker 和 OpenSSH Server 为可选项；未安装时托盘会显示相应服务未启用。
+- DSH 为可选项；当前集成使用目标发行版的 `dsh-wsl.service` 和本地 `http://127.0.0.1:3080/`，会话接口验证于 DSH `0.1.5-rc.1`。托盘不安装 DSH，也不修改其自启或自动重启策略。
 
 ## 快速安装
 
@@ -67,6 +71,8 @@ sudo systemctl start wsl-tray-watchdog.service
 sudo systemctl status wsl-tray-watchdog.service
 ```
 
+DSH 默认不加入 watchdog；服务停止后可从托盘手动启动。若希望 DSH 开机启动但停止后不自动拉起，可单独为已有的 DSH systemd 服务启用开机启动并设置 `Restart=no`。
+
 ## 托盘状态
 
 - 绿色：WSL、Docker、SSH、watchdog 和容器均正常。
@@ -82,6 +88,8 @@ sudo systemctl status wsl-tray-watchdog.service
 ```
 
 构建脚本使用 Windows 自带的 .NET Framework C# 编译器，不需要安装 .NET SDK 或第三方 NuGet 包。输出位于 `build\`，并自动执行内置自测。
+
+`tests/` 包含 DSH 控制器与遥测单元测试、五主题布局检查和会话管理测试。C# 测试需与 `src/*.cs` 共同编译并指定对应测试类为入口。`BoardTests` 的真实列表检查需要正在运行且可访问的本地 DSH；管理操作使用模拟传输，隐藏记录使用独立临时文件，不修改已有会话。Linux 遥测测试可运行 `python3 -m unittest discover -s tests -p test_dsh_agent.py`。
 
 完整恢复测试会短暂终止目标 WSL：
 
@@ -108,7 +116,7 @@ systemd timer (inside WSL, every 5 min)
   └─ watchdog checks configured services and optional containers
 ```
 
-应用只读取本机资源与服务状态，不包含联网遥测、账号系统或远程数据上传。当前版本一次运行监控一个 WSL 发行版。
+应用读取本机资源与服务状态，仅在用户操作时执行服务控制及 DSH 会话管理，不包含联网遥测、账号系统或远程数据上传。当前版本一次运行监控一个 WSL 发行版。看板隐藏只影响本机列表，不删除聊天记录；会话空闲也不代表任务完成。
 
 ## License
 

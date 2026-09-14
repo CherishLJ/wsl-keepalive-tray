@@ -38,6 +38,13 @@ namespace WSLKeepAliveTray
         public string ServiceError { get; set; }
         public string AgentError { get; set; }
         public DateTime ReceivedAtUtc { get; set; }
+        public string DshLoadState { get; set; }
+        public string DshActiveState { get; set; }
+        public string DshSubState { get; set; }
+        public int DshMainPid { get; set; }
+        public bool DshWebReady { get; set; }
+        public string DshError { get; set; }
+        public long DshCheckedUnixMs { get; set; }
 
         public TelemetrySnapshot()
         {
@@ -57,7 +64,8 @@ namespace WSLKeepAliveTray
             {
                 bool containersHealthy = ContainersTotal == 0 || ContainersRunning == ContainersTotal;
                 return string.IsNullOrEmpty(AgentError) && DockerActive && SshActive &&
-                    WatchdogTimerActive && containersHealthy;
+                    WatchdogTimerActive && containersHealthy &&
+                    (DshCheckedUnixMs == 0 || (DshActiveState == "active" && DshWebReady));
             }
         }
 
@@ -164,4 +172,3 @@ namespace WSLKeepAliveTray
         }
     }
 }
-

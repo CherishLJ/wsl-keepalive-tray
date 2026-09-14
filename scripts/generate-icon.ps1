@@ -31,28 +31,18 @@ $tile = [System.Drawing.RectangleF]::new(14, 14, 228, 228)
 $tilePath = New-RoundedPath -Bounds $tile -Radius 56
 $gradient = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
     $tile,
-    [System.Drawing.Color]::FromArgb(255, 34, 49, 67),
-    [System.Drawing.Color]::FromArgb(255, 12, 21, 32),
+    [System.Drawing.Color]::FromArgb(255, 255, 254, 251),
+    [System.Drawing.Color]::FromArgb(255, 233, 239, 229),
     90
 )
 $border = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 91, 121, 145), 7)
 $graphics.FillPath($gradient, $tilePath)
 $graphics.DrawPath($border, $tilePath)
 
-$pulse = [System.Drawing.PointF[]]@(
-    [System.Drawing.PointF]::new(45, 137),
-    [System.Drawing.PointF]::new(79, 137),
-    [System.Drawing.PointF]::new(101, 87),
-    [System.Drawing.PointF]::new(132, 181),
-    [System.Drawing.PointF]::new(158, 119),
-    [System.Drawing.PointF]::new(204, 119)
-)
-$pulsePen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 240, 246, 250), 16)
-$pulsePen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-$pulsePen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-$pulsePen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
-$graphics.DrawLines($pulsePen, $pulse)
-
+$logo = [System.Drawing.Image]::FromFile((Join-Path $PSScriptRoot '..\assets\deepforest-icon.png'))
+$graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$graphics.DrawImage($logo, [System.Drawing.Rectangle]::new(30, 23, 196, 210))
+$logo.Dispose()
 $glow = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(90, 47, 211, 129))
 $dot = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 47, 211, 129))
 $ring = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 239, 249, 245), 5)
@@ -90,7 +80,7 @@ $memory.Dispose()
 $ring.Dispose()
 $dot.Dispose()
 $glow.Dispose()
-$pulsePen.Dispose()
+
 $border.Dispose()
 $gradient.Dispose()
 $tilePath.Dispose()

@@ -31,6 +31,7 @@ namespace WSLKeepAliveTray
         private bool disposing;
         private int restartAttempt;
         private TelemetrySnapshot latestSnapshot;
+        public DshController Dsh { get; private set; }
 
         public event EventHandler<TelemetryEventArgs> TelemetryReceived;
         public event EventHandler<AgentStateEventArgs> StateChanged;
@@ -41,6 +42,7 @@ namespace WSLKeepAliveTray
             distro = distroName;
             wslExe = ResolveWslExe();
             desiredRunning = true;
+            Dsh = new DshController(distroName, delegate { return DesiredRunning && AgentRunning; });
         }
 
         public string Distro
@@ -150,6 +152,7 @@ namespace WSLKeepAliveTray
                     restartAttempt = 0;
                 }
                 EventHandler<TelemetryEventArgs> handler = TelemetryReceived;
+                Dsh.Accept(snapshot);
                 if (handler != null)
                 {
                     handler(this, new TelemetryEventArgs(snapshot));

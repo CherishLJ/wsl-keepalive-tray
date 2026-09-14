@@ -14,11 +14,39 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.request
 from typing import Dict, Optional, Tuple
 
 
 SCHEMA_VERSION = 1
 SECTOR_SIZE = 512
+
+
+def dsh_status() -> Dict[str, object]:
+    code, output, _ = _run([
+        "systemctl", "show", "dsh-wsl.service", "--no-pager",
+        "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID",
+    ], timeout=2.0)
+    properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    load = properties.get("LoadState", "unknown")
+    active = properties.get("ActiveState", "unknown")
+    reachable = False
+    error = "" if code == 0 or load == "not-found" else "systemd 状态查询失败"
+    if active == "active":
+        try:
+            # Never send this local health probe through proxy environment settings.
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open("http://127.0.0.1:3080/", timeout=1.0) as response:
+                reachable = response.status == 200
+        except Exception:
+            error = "本地网页暂未响应"
+    return {
+        "dshLoadState": load, "dshActiveState": active,
+        "dshSubState": properties.get("SubState", "unknown"),
+        "dshMainPid": int(properties.get("MainPID", "0") or "0"),
+        "dshWebReady": reachable, "dshError": error,
+        "dshCheckedUnixMs": int(time.time() * 1000),
+    }
 
 
 def _read_text(path: str) -> str:
@@ -49,6 +77,8 @@ class Sampler:
         self.previous_time: Optional[float] = None
         self.service_cache: Dict[str, object] = {}
         self.service_cache_time = 0.0
+        self.dsh_cache: Dict[str, object] = {}
+        self.dsh_cache_time = 0.0
 
     @staticmethod
     def _cpu_counters() -> Tuple[int, int]:
@@ -201,6 +231,10 @@ class Sampler:
         }
         result.update(memory)
         result.update(self._services(now))
+        if not self.dsh_cache or now - self.dsh_cache_time >= 5.0:
+            self.dsh_cache = dsh_status()
+            self.dsh_cache_time = now
+        result.update(self.dsh_cache)
         return result
 
 
@@ -208,7 +242,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="WSL tray keepalive telemetry agent")
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--dsh-status", action="store_true")
     args = parser.parse_args()
+    if args.dsh_status:
+        result = dsh_status()
+        result["schemaVersion"] = SCHEMA_VERSION
+        print(json.dumps(result, ensure_ascii=False), flush=True)
+        return 0
     interval = max(0.5, min(60.0, args.interval))
 
     stopping = False
@@ -253,4 +293,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

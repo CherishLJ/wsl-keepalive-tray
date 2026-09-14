@@ -21,25 +21,15 @@ namespace WSLKeepAliveTray
 
                 RectangleF tile = new RectangleF(2, 2, 28, 28);
                 using (GraphicsPath path = RoundedRectangle(tile, 7))
-                using (LinearGradientBrush fill = new LinearGradientBrush(tile, Color.FromArgb(30, 42, 58), Color.FromArgb(12, 20, 31), 90f))
+                using (LinearGradientBrush fill = new LinearGradientBrush(tile, Color.FromArgb(255, 254, 251), Color.FromArgb(233, 239, 229), 90f))
                 using (Pen border = new Pen(Color.FromArgb(95, 125, 150), 1f))
                 {
                     graphics.FillPath(fill, path);
                     graphics.DrawPath(border, path);
                 }
 
-                PointF[] pulse =
-                {
-                    new PointF(6, 17), new PointF(10, 17), new PointF(12.5f, 11),
-                    new PointF(16, 22), new PointF(19, 15), new PointF(23, 15)
-                };
-                using (Pen pulsePen = new Pen(Color.FromArgb(238, 244, 248), 2.2f))
-                {
-                    pulsePen.StartCap = LineCap.Round;
-                    pulsePen.EndCap = LineCap.Round;
-                    pulsePen.LineJoin = LineJoin.Round;
-                    graphics.DrawLines(pulsePen, pulse);
-                }
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.DrawImage(BrandAssets.Logo, new Rectangle(4, 3, 24, 26));
 
                 using (Brush glow = new SolidBrush(Color.FromArgb(75, status)))
                 using (Brush dot = new SolidBrush(status))

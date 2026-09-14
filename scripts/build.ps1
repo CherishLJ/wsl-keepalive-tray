@@ -24,6 +24,7 @@ $arguments = @(
     ('/pdb:' + (Join-Path $buildDirectory 'WSLKeepAliveTray.pdb')),
     ('/win32icon:' + (Join-Path $assetsDirectory 'app.ico')),
     ('/win32manifest:' + (Join-Path $projectRoot 'app.manifest')),
+    ('/resource:' + (Join-Path $assetsDirectory 'deepforest-icon.png') + ',DeepForest.Icon'),
     '/r:System.dll',
     '/r:System.Core.dll',
     '/r:System.Drawing.dll',
@@ -44,4 +45,3 @@ if ($process.ExitCode -ne 0) {
     throw "Self-test failed with exit code $($process.ExitCode)"
 }
 Get-Content -LiteralPath $selfTestReport
-

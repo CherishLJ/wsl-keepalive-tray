@@ -18,6 +18,15 @@ namespace WSLKeepAliveTray
         public Color PrimaryColor { get; set; }
         public Color SecondaryColor { get; set; }
         public float FixedMaximum { get; set; }
+        private Color gridColor = Color.FromArgb(38, 55, 70);
+        private Color borderColor = Color.FromArgb(49, 63, 79);
+        public void ApplyTheme(Theme theme)
+        {
+            BackColor = theme.ChartBackground; ForeColor = theme.ChartInk;
+            gridColor = theme.Grid; borderColor = theme.Border;
+            PrimaryColor = theme.Primary; SecondaryColor = theme.Secondary;
+            Invalidate();
+        }
 
         public SparklineControl()
         {
@@ -48,18 +57,19 @@ namespace WSLKeepAliveTray
             Graphics graphics = e.Graphics;
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Rectangle bounds = ClientRectangle;
+            float dpiScale = graphics.DpiY / 96f;
 
             using (SolidBrush background = new SolidBrush(BackColor))
-            using (Pen border = new Pen(Color.FromArgb(49, 63, 79)))
+            using (Pen border = new Pen(borderColor))
             {
                 graphics.FillRectangle(background, bounds);
                 graphics.DrawRectangle(border, 0, 0, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1));
             }
 
             using (Font titleFont = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold))
-            using (SolidBrush titleBrush = new SolidBrush(Color.FromArgb(185, 198, 209)))
+            using (SolidBrush titleBrush = new SolidBrush(ForeColor))
             {
-                graphics.DrawString(ChartTitle, titleFont, titleBrush, 12, 9);
+                graphics.DrawString(ChartTitle, titleFont, titleBrush, 12 * dpiScale, 9 * dpiScale);
             }
 
             string value = primary.Count == 0 ? "--" : primary[primary.Count - 1].ToString(primary[primary.Count - 1] >= 100 ? "0" : "0.0", CultureInfo.InvariantCulture) + Unit;
@@ -67,11 +77,12 @@ namespace WSLKeepAliveTray
             using (SolidBrush valueBrush = new SolidBrush(ForeColor))
             {
                 SizeF size = graphics.MeasureString(value, valueFont);
-                graphics.DrawString(value, valueFont, valueBrush, bounds.Width - size.Width - 10, 9);
+                graphics.DrawString(value, valueFont, valueBrush, bounds.Width - size.Width - 10 * dpiScale, 9 * dpiScale);
             }
 
-            RectangleF plot = new RectangleF(10, 36, Math.Max(10, bounds.Width - 20), Math.Max(10, bounds.Height - 47));
-            using (Pen grid = new Pen(Color.FromArgb(38, 55, 70)))
+            RectangleF plot = new RectangleF(10 * dpiScale, 36 * dpiScale,
+                Math.Max(10, bounds.Width - 20 * dpiScale), Math.Max(10, bounds.Height - 47 * dpiScale));
+            using (Pen grid = new Pen(gridColor))
             {
                 for (int i = 1; i <= 3; i++)
                 {
@@ -110,4 +121,3 @@ namespace WSLKeepAliveTray
         }
     }
 }
-
