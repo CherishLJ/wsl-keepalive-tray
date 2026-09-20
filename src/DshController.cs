@@ -122,7 +122,7 @@ namespace WSLKeepAliveTray
             try { Process.Start(new ProcessStartInfo("http://127.0.0.1:3080/") { UseShellExecute = true }); }
             catch(Exception ex) { SetMessage("打开网页失败：" + ex.Message); }
         }
-        private static DshCommandResult Execute(string arguments, int timeout)
+        internal static DshCommandResult Execute(string arguments, int timeout)
         {
             var result = new DshCommandResult();
             var output = new StringBuilder();

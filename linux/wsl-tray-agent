@@ -49,12 +49,76 @@ def dsh_status() -> Dict[str, object]:
     }
 
 
+def _systemctl_user(command: list[str], timeout: float) -> Tuple[int, str, str]:
+    """Run a systemctl --user command for the agent's owning user.
+
+    The agent starts as root (mirroring the dsh-wsl system service probes), so
+    user units such as mcp-hub.service are first queried directly; when the
+    user bus is unreachable we retry via machinectl shell into the default
+    user (UID 1000, the login user on single-user WSL distros).
+    """
+    base = ["systemctl", "--user"] + command
+    env = dict(os.environ)
+    env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+    code, output, error = _run_env(base, env, timeout)
+    if code == 0 and output:
+        return code, output, error
+    fallback = ["machinectl", "shell", "-q", "jie@"] + base
+    code2, output2, error2 = _run(fallback, timeout)
+    if code2 == 0 or output2:
+        return code2, output2, error2
+    return code, output, error
+
+
+def mcp_hub_status() -> Dict[str, object]:
+    code, output, _ = _systemctl_user([
+        "show", "mcp-hub.service", "--no-pager",
+        "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID",
+    ], timeout=3.0)
+    properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    load = properties.get("LoadState", "unknown")
+    active = properties.get("ActiveState", "unknown")
+    ready = False
+    error = "" if code == 0 or load == "not-found" else "systemd 用户服务查询失败"
+    if active == "active":
+        try:
+            # MCP Streamable HTTP readiness probe: an authenticated-less JSON-RPC
+            # initialize must reach the bridge. Never route via proxy env.
+            request = urllib.request.Request(
+                "http://127.0.0.1:43981/mcp",
+                data=json.dumps({
+                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                               "clientInfo": {"name": "wsl-tray-agent", "version": "1"}},
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json",
+                         "Accept": "application/json, text/event-stream"},
+            )
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(request, timeout=2.0) as response:
+                body = response.read(4096).decode("utf-8", "replace")
+                ready = response.status == 200 and "serverInfo" in body
+        except Exception:
+            error = "MCP 网关暂未响应"
+    return {
+        "mcpHubLoadState": load, "mcpHubActiveState": active,
+        "mcpHubSubState": properties.get("SubState", "unknown"),
+        "mcpHubMainPid": int(properties.get("MainPID", "0") or "0"),
+        "mcpHubReady": ready, "mcpHubError": error,
+        "mcpHubCheckedUnixMs": int(time.time() * 1000),
+    }
+
+
 def _read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as stream:
         return stream.read()
 
 
 def _run(command: list[str], timeout: float = 3.0) -> Tuple[int, str, str]:
+    return _run_env(command, None, timeout)
+
+
+def _run_env(command: list[str], env: Optional[Dict[str, str]], timeout: float) -> Tuple[int, str, str]:
     try:
         completed = subprocess.run(
             command,
@@ -63,6 +127,7 @@ def _run(command: list[str], timeout: float = 3.0) -> Tuple[int, str, str]:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
         return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
     except Exception as exc:  # telemetry must never terminate on an optional probe
@@ -79,6 +144,8 @@ class Sampler:
         self.service_cache_time = 0.0
         self.dsh_cache: Dict[str, object] = {}
         self.dsh_cache_time = 0.0
+        self.mcp_hub_cache: Dict[str, object] = {}
+        self.mcp_hub_cache_time = 0.0
 
     @staticmethod
     def _cpu_counters() -> Tuple[int, int]:
@@ -235,6 +302,10 @@ class Sampler:
             self.dsh_cache = dsh_status()
             self.dsh_cache_time = now
         result.update(self.dsh_cache)
+        if not self.mcp_hub_cache or now - self.mcp_hub_cache_time >= 5.0:
+            self.mcp_hub_cache = mcp_hub_status()
+            self.mcp_hub_cache_time = now
+        result.update(self.mcp_hub_cache)
         return result
 
 
@@ -243,9 +314,15 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dsh-status", action="store_true")
+    parser.add_argument("--mcp-hub-status", action="store_true")
     args = parser.parse_args()
     if args.dsh_status:
         result = dsh_status()
+        result["schemaVersion"] = SCHEMA_VERSION
+        print(json.dumps(result, ensure_ascii=False), flush=True)
+        return 0
+    if args.mcp_hub_status:
+        result = mcp_hub_status()
         result["schemaVersion"] = SCHEMA_VERSION
         print(json.dumps(result, ensure_ascii=False), flush=True)
         return 0

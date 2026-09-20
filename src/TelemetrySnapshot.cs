@@ -45,6 +45,13 @@ namespace WSLKeepAliveTray
         public bool DshWebReady { get; set; }
         public string DshError { get; set; }
         public long DshCheckedUnixMs { get; set; }
+        public string McpHubLoadState { get; set; }
+        public string McpHubActiveState { get; set; }
+        public string McpHubSubState { get; set; }
+        public int McpHubMainPid { get; set; }
+        public bool McpHubReady { get; set; }
+        public string McpHubError { get; set; }
+        public long McpHubCheckedUnixMs { get; set; }
 
         public TelemetrySnapshot()
         {
@@ -65,7 +72,8 @@ namespace WSLKeepAliveTray
                 bool containersHealthy = ContainersTotal == 0 || ContainersRunning == ContainersTotal;
                 return string.IsNullOrEmpty(AgentError) && DockerActive && SshActive &&
                     WatchdogTimerActive && containersHealthy &&
-                    (DshCheckedUnixMs == 0 || (DshActiveState == "active" && DshWebReady));
+                    (DshCheckedUnixMs == 0 || (DshActiveState == "active" && DshWebReady)) &&
+                    (McpHubCheckedUnixMs == 0 || (McpHubActiveState == "active" && McpHubReady));
             }
         }
 

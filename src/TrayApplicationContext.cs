@@ -33,6 +33,7 @@ namespace WSLKeepAliveTray
         private bool exiting;
         private readonly ToolStripMenuItem themesItem;
         private readonly ToolStripMenuItem dshItem, dshStart, dshStop, dshRestart, dshRefresh, dshWeb;
+        private readonly ToolStripMenuItem hubItem, hubStart, hubStop, hubRestart, hubRefresh;
 
         public TrayApplicationContext(
             string distroName,
@@ -111,6 +112,15 @@ namespace WSLKeepAliveTray
             dshItem.DropDownOpening += delegate { UpdateDshMenu(); };
             menu.Items.Add(dshItem);
             supervisor.Dsh.Changed += DshChanged;
+            hubItem = new ToolStripMenuItem("MCP Hub · 等待状态");
+            hubStart = CommandItem("启动 MCP Hub", delegate { supervisor.McpHub.Act("start"); });
+            hubStop = CommandItem("停止 MCP Hub", delegate { supervisor.McpHub.Act("stop"); });
+            hubRestart = CommandItem("重启 MCP Hub", delegate { supervisor.McpHub.Act("restart"); });
+            hubRefresh = CommandItem("刷新 MCP Hub 状态", delegate { supervisor.McpHub.Act("refresh"); });
+            hubItem.DropDownItems.AddRange(new ToolStripItem[] { hubStart, hubStop, hubRestart, hubRefresh });
+            hubItem.DropDownOpening += delegate { UpdateHubMenu(); };
+            menu.Items.Add(hubItem);
+            supervisor.McpHub.Changed += HubChanged;
             menu.Items.Add(healthItem);
             menu.Items.Add(terminalItem);
             menu.Items.Add(logsItem);
@@ -195,6 +205,15 @@ namespace WSLKeepAliveTray
             dshRestart.Enabled = dsh.CanRestart; dshRefresh.Enabled = dsh.CanRefresh;
             dshWeb.Enabled = dsh.Fresh && dsh.Snapshot.DshWebReady && !dsh.Busy;
         }
+        private void HubChanged(object sender, EventArgs args) { Ui(UpdateHubMenu); }
+        private void UpdateHubMenu()
+        {
+            McpHubController hub = supervisor.McpHub;
+            hubItem.Text = hub.Status + (hub.Busy ? " · 操作中" : "");
+            hubItem.ToolTipText = hub.Message;
+            hubStart.Enabled = hub.CanStart; hubStop.Enabled = hub.CanStop;
+            hubRestart.Enabled = hub.CanRestart; hubRefresh.Enabled = hub.CanRefresh;
+        }
         private void ApplyTheme()
         {
             Theme theme = ThemeManager.Current;
@@ -204,6 +223,9 @@ namespace WSLKeepAliveTray
             themesItem.DropDown.BackColor = theme.Surface;
             themesItem.DropDown.ForeColor = theme.Ink;
             themesItem.DropDown.Renderer = new ToolStripProfessionalRenderer(new ThemeColorTable(theme));
+            hubItem.DropDown.BackColor = theme.Surface;
+            hubItem.DropDown.Renderer = new ToolStripProfessionalRenderer(new ThemeColorTable(theme));
+            foreach(ToolStripItem item in hubItem.DropDownItems) item.ForeColor = theme.Ink;
             dshItem.DropDown.BackColor = theme.Surface;
             dshItem.DropDown.Renderer = new ToolStripProfessionalRenderer(new ThemeColorTable(theme));
             foreach(ToolStripItem item in dshItem.DropDownItems) item.ForeColor = theme.Ink;
@@ -300,6 +322,7 @@ namespace WSLKeepAliveTray
         private void OnMenuOpening(object sender, CancelEventArgs args)
         {
             UpdateDshMenu();
+            UpdateHubMenu();
             UpdateMetrics();
             autostartItem.Checked = AutostartManager.IsEnabled();
             startItem.Enabled = !supervisor.DesiredRunning || !supervisor.AgentRunning;
@@ -414,6 +437,7 @@ namespace WSLKeepAliveTray
             supervisor.Dsh.BoardRequested -= OpenTaskBoard;
             if(taskBoard!=null) taskBoard.ExitBoard();
             supervisor.Dsh.Changed -= DshChanged;
+            supervisor.McpHub.Changed -= HubChanged;
             ThemeManager.Changed -= OnThemeChanged;
             AppLog.Write("退出托盘，stopWsl=" + stopWsl);
             if (stopWsl)
