@@ -72,6 +72,28 @@ sudo systemctl start wsl-tray-watchdog.service
 sudo systemctl status wsl-tray-watchdog.service
 ```
 
+watchdog 的每一步动作与失败都会写入 syslog（tag `wsl-tray-watchdog`），oneshot 单元不会保留 stdout，所以排查时看 journal：
+
+```bash
+sudo journalctl -t wsl-tray-watchdog -n 50 --no-pager
+```
+
+典型输出形如：
+
+```text
+health check started: services=[docker.service ssh.service] containers=[]
+service docker.service: active
+service ssh.service: active
+health check passed
+```
+
+配置了容器时会多出逐个容器的检查；容器不存在、启动失败或启动后仍未 running，都会指名道姓地报出容器名并以非零码退出：
+
+```text
+container api: FAILED (not found)
+health check FAILED
+```
+
 DSH 默认不加入 watchdog；服务停止后可从托盘手动启动。若希望 DSH 开机启动但停止后不自动拉起，可单独为已有的 DSH systemd 服务启用开机启动并设置 `Restart=no`。
 
 ## 托盘状态

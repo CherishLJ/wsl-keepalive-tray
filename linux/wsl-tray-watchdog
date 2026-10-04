@@ -1,8 +1,14 @@
 #!/bin/sh
 # Repair selected systemd services and optional Docker containers inside WSL.
+#
+# 2026-10-04: added syslog reporting. A oneshot unit under a timer discards
+# stdout, so a silent watchdog failure previously left only a bare systemd
+# "Failed to execute" line naming no service or container. Each action and
+# every failure now goes to syslog under the wsl-tray-watchdog tag.
 
 set -u
 
+LOG_TAG="wsl-tray-watchdog"
 CONFIG_FILE=/etc/default/wsl-keepalive-tray
 WATCHDOG_SERVICES="docker.service ssh.service"
 WATCHDOG_CONTAINERS=""
@@ -12,29 +18,76 @@ if [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
+log() {
+    if command -v logger >/dev/null 2>&1; then
+        logger -p user.notice -t "$LOG_TAG" -- "$*"
+    fi
+    # Keep stdout too: when run by hand (not under the timer) it is the only
+    # feedback, and it costs nothing.
+    printf '%s\n' "$*"
+}
+
+log "health check started: services=[$WATCHDOG_SERVICES] containers=[$WATCHDOG_CONTAINERS]"
+
 failed=0
 
 for service in $WATCHDOG_SERVICES; do
     if ! systemctl cat "$service" >/dev/null 2>&1; then
+        log "skip $service: unit not present"
         continue
     fi
     if ! systemctl is-active --quiet "$service"; then
-        systemctl start "$service" || failed=1
+        log "start $service: was inactive"
+        if systemctl start "$service"; then
+            log "start $service: ok"
+        else
+            log "start $service: FAILED"
+            failed=1
+        fi
     fi
-    systemctl is-active --quiet "$service" || failed=1
+    if systemctl is-active --quiet "$service"; then
+        log "service $service: active"
+    else
+        log "service $service: FAILED to stay active"
+        failed=1
+    fi
 done
 
 if [ -n "$WATCHDOG_CONTAINERS" ] && command -v docker >/dev/null 2>&1; then
     for container in $WATCHDOG_CONTAINERS; do
         if ! docker inspect "$container" >/dev/null 2>&1; then
+            log "container $container: FAILED (not found)"
             failed=1
             continue
         fi
         running=$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)
         if [ "$running" != "true" ]; then
-            docker start "$container" >/dev/null || failed=1
+            log "start container $container: was not running"
+            if docker start "$container" >/dev/null 2>&1; then
+                log "start container $container: ok"
+            else
+                log "start container $container: FAILED"
+                failed=1
+                continue
+            fi
+        fi
+        running=$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)
+        if [ "$running" = "true" ]; then
+            log "container $container: running"
+        else
+            log "container $container: FAILED to reach running state"
+            failed=1
         fi
     done
+elif [ -n "$WATCHDOG_CONTAINERS" ]; then
+    log "containers requested but docker is unavailable"
+    failed=1
+fi
+
+if [ "$failed" -ne 0 ]; then
+    log "health check FAILED"
+else
+    log "health check passed"
 fi
 
 exit "$failed"
