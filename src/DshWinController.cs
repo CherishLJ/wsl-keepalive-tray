@@ -40,18 +40,18 @@ namespace WSLKeepAliveTray
         {
             get
             {
-                if (!Fresh) return "DSH-Win · 状态未知 / 等待遥测";
+                if (!Fresh) return "dsh-win · 状态未知 / 等待遥测";
                 TelemetrySnapshot value = Snapshot;
                 string client = value.DshWinClientUp ? "客户端运行" : "客户端未开";
                 if (value.DshWinLoadState == "not-found")
-                    return "DSH-Win · " + client + " · 网页入口未安装";
+                    return "dsh-win · " + client + " · 网页入口未安装";
                 if (value.DshWinActiveState == "active")
-                    return "DSH-Win · " + client + " · " + (value.DshWinWebReady ? "网页可访问" : "网页未响应");
-                if (value.DshWinActiveState == "inactive") return "DSH-Win · " + client + " · 网页入口已停止";
-                if (value.DshWinActiveState == "failed") return "DSH-Win · " + client + " · 网页入口启动失败";
-                if (value.DshWinActiveState == "activating") return "DSH-Win · " + client + " · 网页入口正在启动";
-                if (value.DshWinActiveState == "deactivating") return "DSH-Win · " + client + " · 网页入口正在停止";
-                return value.DshWinClientUp ? "DSH-Win · " + client : "DSH-Win · 状态未知";
+                    return "dsh-win · " + client + " · " + (value.DshWinWebReady ? "网页可访问" : "网页未响应");
+                if (value.DshWinActiveState == "inactive") return "dsh-win · " + client + " · 网页入口已停止";
+                if (value.DshWinActiveState == "failed") return "dsh-win · " + client + " · 网页入口启动失败";
+                if (value.DshWinActiveState == "activating") return "dsh-win · " + client + " · 网页入口正在启动";
+                if (value.DshWinActiveState == "deactivating") return "dsh-win · " + client + " · 网页入口正在停止";
+                return value.DshWinClientUp ? "dsh-win · " + client : "dsh-win · 状态未知";
             }
         }
         internal DshWinController(string distroName, Func<bool> isOnline)

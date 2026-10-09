@@ -23,8 +23,6 @@ namespace WSLKeepAliveTray
         private int busy;
         private string message = "";
         public event EventHandler Changed;
-        public event EventHandler BoardRequested;
-        public void OpenBoard() { var handler=BoardRequested; if(handler!=null) handler(this,EventArgs.Empty); }
         public bool Busy { get { return Interlocked.CompareExchange(ref busy, 0, 0) != 0; } }
         public string Message { get { lock(sync) return message; } }
         public TelemetrySnapshot Snapshot { get { lock(sync) return snapshot; } }
@@ -49,15 +47,15 @@ namespace WSLKeepAliveTray
         {
             get
             {
-                if (!Fresh) return "DSH · 状态未知 / 等待遥测";
+                if (!Fresh) return "dsh-wsl · 状态未知 / 等待遥测";
                 TelemetrySnapshot value = Snapshot;
-                if (value.DshLoadState == "not-found") return "DSH · 未安装服务";
-                if (value.DshActiveState == "active") return value.DshWebReady ? "DSH · 运行中 · 网页可访问" : "DSH · 进程运行 · 网页未响应";
-                if (value.DshActiveState == "inactive") return "DSH · 已停止";
-                if (value.DshActiveState == "failed") return "DSH · 启动失败";
-                if (value.DshActiveState == "activating") return "DSH · 正在启动";
-                if (value.DshActiveState == "deactivating") return "DSH · 正在停止";
-                return "DSH · 状态未知";
+                if (value.DshLoadState == "not-found") return "dsh-wsl · 未安装服务";
+                if (value.DshActiveState == "active") return value.DshWebReady ? "dsh-wsl · 运行中 · 网页可访问" : "dsh-wsl · 进程运行 · 网页未响应";
+                if (value.DshActiveState == "inactive") return "dsh-wsl · 已停止";
+                if (value.DshActiveState == "failed") return "dsh-wsl · 启动失败";
+                if (value.DshActiveState == "activating") return "dsh-wsl · 正在启动";
+                if (value.DshActiveState == "deactivating") return "dsh-wsl · 正在停止";
+                return "dsh-wsl · 状态未知";
             }
         }
         internal DshController(string distroName, Func<bool> isOnline)

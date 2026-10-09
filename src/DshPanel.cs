@@ -9,7 +9,7 @@ namespace WSLKeepAliveTray
         private readonly DshController controller;
         private readonly Label status;
         private readonly Label detail;
-        private readonly Button start, stop, restart, refresh, web, board;
+        private readonly Button start, stop, restart, refresh, web;
         private readonly Timer timer;
         private readonly ToolTip tip = new ToolTip();
         public DshPanel(DshController value)
@@ -26,15 +26,14 @@ namespace WSLKeepAliveTray
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
             start = Button("启动", delegate { controller.Act("start"); });
             stop = Button("停止", delegate { controller.Act("stop"); });
-            restart = Button("重启 DSH", delegate { controller.Act("restart"); });
+            restart = Button("重启 dsh-wsl", delegate { controller.Act("restart"); }, 112);
             refresh = Button("刷新", delegate { controller.Act("refresh"); });
             web = Button("打开网页", delegate { controller.OpenWeb(); });
-            board = Button("任务看板", delegate { controller.OpenBoard(); });
-            actions.Controls.AddRange(new Control[] { start, stop, restart, refresh, web, board });
+            actions.Controls.AddRange(new Control[] { start, stop, restart, refresh, web });
             detail = new Label { AutoSize = false, Dock = DockStyle.Fill, AutoEllipsis = true,
                 TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(10, 0, 0, 0) };
             var actionRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-            actionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 516));
+            actionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 470));
             actionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             actionRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             actionRow.Controls.Add(actions, 0, 0); actionRow.Controls.Add(detail, 1, 0);
@@ -45,9 +44,10 @@ namespace WSLKeepAliveTray
             timer.Start();
             UpdateState();
         }
-        private static Button Button(string text, Action action)
+        private static Button Button(string text, Action action) { return Button(text, action, 78); }
+        private static Button Button(string text, Action action, int width)
         {
-            var button = new ActionButton { Text = text, Size = new Size(78, 30), FlatStyle = FlatStyle.Flat,
+            var button = new ActionButton { Text = text, Size = new Size(width, 30), FlatStyle = FlatStyle.Flat,
                 Margin = new Padding(0, 0, 6, 0), Cursor = Cursors.Hand };
             button.Click += delegate { action(); };
             return button;
@@ -78,7 +78,7 @@ namespace WSLKeepAliveTray
         public void ApplyTheme(Theme theme)
         {
             BackColor = theme.Surface; status.ForeColor = theme.Ink; detail.ForeColor = theme.Muted;
-            foreach(Button button in new[] { start, stop, restart, refresh, web, board })
+            foreach(Button button in new[] { start, stop, restart, refresh, web })
             {
                 button.BackColor = theme.Header; button.ForeColor = theme.Ink;
                 button.FlatAppearance.BorderColor = theme.Border;

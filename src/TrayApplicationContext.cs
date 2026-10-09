@@ -14,7 +14,6 @@ namespace WSLKeepAliveTray
         private readonly ContextMenuStrip menu;
         private readonly WslAgentSupervisor supervisor;
         private readonly DashboardForm dashboard;
-        private TaskBoardForm taskBoard;
         private readonly EventWaitHandle showEvent;
         private readonly EventWaitHandle exitEvent;
         private readonly EventWaitHandle exitAndStopEvent;
@@ -59,7 +58,6 @@ namespace WSLKeepAliveTray
             IntPtr hostHandle = host.Handle;
 
             supervisor = new WslAgentSupervisor(distroName);
-            supervisor.Dsh.BoardRequested += OpenTaskBoard;
             dashboard = new DashboardForm(supervisor);
             // Telemetry can arrive before the dashboard is first shown. Ensure
             // its handle belongs to this UI thread so InvokeRequired remains
@@ -93,7 +91,6 @@ namespace WSLKeepAliveTray
             ToolStripMenuItem terminalItem = CommandItem("打开 WSL 终端", delegate { supervisor.OpenTerminal(); });
             ToolStripMenuItem logsItem = CommandItem("打开日志目录", delegate { AppLog.OpenDirectory(); });
             menu.Items.Add(dashboardItem);
-            menu.Items.Add(CommandItem("DSH 任务看板", delegate { supervisor.Dsh.OpenBoard(); }));
             themesItem = new ToolStripMenuItem("外观主题");
             foreach (Theme theme in ThemeManager.All)
             {
@@ -103,22 +100,22 @@ namespace WSLKeepAliveTray
                 themesItem.DropDownItems.Add(item);
             }
             menu.Items.Add(themesItem);
-            dshItem = new ToolStripMenuItem("DSH · 等待状态");
-            dshStart = CommandItem("启动 DSH", delegate { supervisor.Dsh.Act("start"); });
-            dshStop = CommandItem("停止 DSH", delegate { supervisor.Dsh.Act("stop"); });
-            dshRestart = CommandItem("重启 DSH", delegate { supervisor.Dsh.Act("restart"); });
-            dshRefresh = CommandItem("刷新 DSH 状态", delegate { supervisor.Dsh.Act("refresh"); });
-            dshWeb = CommandItem("打开 DSH 网页", delegate { supervisor.Dsh.OpenWeb(); });
+            dshItem = new ToolStripMenuItem("dsh-wsl · 等待状态");
+            dshStart = CommandItem("启动 dsh-wsl", delegate { supervisor.Dsh.Act("start"); });
+            dshStop = CommandItem("停止 dsh-wsl", delegate { supervisor.Dsh.Act("stop"); });
+            dshRestart = CommandItem("重启 dsh-wsl", delegate { supervisor.Dsh.Act("restart"); });
+            dshRefresh = CommandItem("刷新 dsh-wsl 状态", delegate { supervisor.Dsh.Act("refresh"); });
+            dshWeb = CommandItem("打开 dsh-wsl 网页", delegate { supervisor.Dsh.OpenWeb(); });
             dshItem.DropDownItems.AddRange(new ToolStripItem[] { dshStart, dshStop, dshRestart, dshRefresh, dshWeb });
             dshItem.DropDownOpening += delegate { UpdateDshMenu(); };
             menu.Items.Add(dshItem);
             supervisor.Dsh.Changed += DshChanged;
-            winItem = new ToolStripMenuItem("DSH-Win · 等待状态");
+            winItem = new ToolStripMenuItem("dsh-win · 等待状态");
             winStart = CommandItem("启动网页入口", delegate { supervisor.DshWin.Act("start"); });
             winStop = CommandItem("停止网页入口", delegate { supervisor.DshWin.Act("stop"); });
-            winRestart = CommandItem("重启网页入口", delegate { supervisor.DshWin.Act("restart"); });
-            winRefresh = CommandItem("刷新 DSH-Win 状态", delegate { supervisor.DshWin.Act("refresh"); });
-            winWeb = CommandItem("打开 DSH-Win 网页", delegate { supervisor.DshWin.OpenWeb(); });
+            winRestart = CommandItem("重启 dsh-win", delegate { supervisor.DshWin.Act("restart"); });
+            winRefresh = CommandItem("刷新 dsh-win 状态", delegate { supervisor.DshWin.Act("refresh"); });
+            winWeb = CommandItem("打开 dsh-win 网页", delegate { supervisor.DshWin.OpenWeb(); });
             winItem.DropDownItems.AddRange(new ToolStripItem[] { winStart, winStop, winRestart, winRefresh, winWeb });
             winItem.DropDownOpening += delegate { UpdateWinMenu(); };
             menu.Items.Add(winItem);
@@ -199,12 +196,6 @@ namespace WSLKeepAliveTray
             item.Padding = new Padding(6, 2, 10, 2);
             return item;
         }
-        private void OpenTaskBoard(object sender, EventArgs args)
-        {
-            if(taskBoard==null || taskBoard.IsDisposed) taskBoard=new TaskBoardForm(supervisor.Dsh);
-            taskBoard.ShowBoard();
-        }
-
         private void OnThemeChanged(object sender, EventArgs args) { ApplyTheme(); }
         private void DshChanged(object sender, EventArgs args) { Ui(UpdateDshMenu); }
         private void UpdateDshMenu()
@@ -455,8 +446,6 @@ namespace WSLKeepAliveTray
         {
             if (exiting) return;
             exiting = true;
-            supervisor.Dsh.BoardRequested -= OpenTaskBoard;
-            if(taskBoard!=null) taskBoard.ExitBoard();
             supervisor.Dsh.Changed -= DshChanged;
             supervisor.DshWin.Changed -= WinChanged;
             supervisor.McpHub.Changed -= HubChanged;

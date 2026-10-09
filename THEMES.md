@@ -1,6 +1,6 @@
 # 深林印象 WSL Tray · 主题版
 
-基于 WSL KeepAlive Tray 保留自启、终端、保活和遥测功能，主题同时应用于监控面板与 DSH 任务看板。
+基于 WSL KeepAlive Tray 保留自启、终端、保活和遥测功能，主题应用于监控面板。
 
 - 主题：紫金山上、深林印象 · 黑板、夜航指挥舱、科研白板、经典深色。
 - 面板右上角或托盘右键「外观主题」立即切换；选择自动保存到 %LOCALAPPDATA%\WSLKeepAliveTray\theme.txt。
