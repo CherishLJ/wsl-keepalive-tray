@@ -32,6 +32,7 @@ namespace WSLKeepAliveTray
         private int restartAttempt;
         private TelemetrySnapshot latestSnapshot;
         public DshController Dsh { get; private set; }
+        public DshWinController DshWin { get; private set; }
         public McpHubController McpHub { get; private set; }
 
         public event EventHandler<TelemetryEventArgs> TelemetryReceived;
@@ -44,6 +45,7 @@ namespace WSLKeepAliveTray
             wslExe = ResolveWslExe();
             desiredRunning = true;
             Dsh = new DshController(distroName, delegate { return DesiredRunning && AgentRunning; });
+            DshWin = new DshWinController(distroName, delegate { return DesiredRunning && AgentRunning; });
             McpHub = new McpHubController(distroName, delegate { return DesiredRunning && AgentRunning; });
         }
 
@@ -155,6 +157,7 @@ namespace WSLKeepAliveTray
                 }
                 EventHandler<TelemetryEventArgs> handler = TelemetryReceived;
                 Dsh.Accept(snapshot);
+                DshWin.Accept(snapshot);
                 McpHub.Accept(snapshot);
                 if (handler != null)
                 {

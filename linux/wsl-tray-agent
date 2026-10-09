@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from typing import Dict, Optional, Tuple
 
@@ -22,30 +23,95 @@ SCHEMA_VERSION = 1
 SECTOR_SIZE = 512
 
 
-def dsh_status() -> Dict[str, object]:
-    code, output, _ = _run([
-        "systemctl", "show", "dsh-wsl.service", "--no-pager",
-        "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID",
-    ], timeout=2.0)
+# A live DSH web server answers the loopback auth gate with 401 when the
+# signed cookie is absent. 200 means a gateway already injected that cookie.
+# Connection failure, 5xx, and redirects are not "the page is up".
+_WEB_REACHABLE_STATUSES = frozenset({200, 401})
+_DSH_WSL_URL = "http://127.0.0.1:3080/"
+_DSH_WIN_CLIENT_URL = "http://127.0.0.1:19387/"
+_DSH_WIN_WEB_URL = "http://127.0.0.1:19388/"
+
+
+def _probe_http(url: str, timeout: float) -> Tuple[bool, str]:
+    """Return (reachable, detail). Never routes the probe through proxy env."""
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(url, timeout=timeout) as response:
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except Exception:
+        return False, "未响应"
+    if status in _WEB_REACHABLE_STATUSES:
+        return True, "HTTP " + str(status)
+    return False, "HTTP " + str(status)
+
+
+def _unit_show(unit: str, user: bool = False) -> Tuple[int, Dict[str, str]]:
+    command = ["show", unit, "--no-pager", "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID"]
+    if user:
+        code, output, _ = _systemctl_user(command, timeout=3.0)
+    else:
+        code, output, _ = _run(["systemctl"] + command, timeout=2.0)
     properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    return code, properties
+
+
+def dsh_status() -> Dict[str, object]:
+    code, properties = _unit_show("dsh-wsl.service")
     load = properties.get("LoadState", "unknown")
     active = properties.get("ActiveState", "unknown")
     reachable = False
+    detail = ""
     error = "" if code == 0 or load == "not-found" else "systemd 状态查询失败"
     if active == "active":
-        try:
-            # Never send this local health probe through proxy environment settings.
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            with opener.open("http://127.0.0.1:3080/", timeout=1.0) as response:
-                reachable = response.status == 200
-        except Exception:
-            error = "本地网页暂未响应"
+        reachable, detail = _probe_http(_DSH_WSL_URL, 1.0)
+        if not reachable:
+            error = "本地网页暂未响应" if detail == "未响应" else "本地网页异常（" + detail + "）"
+    win = dsh_win_status()
     return {
         "dshLoadState": load, "dshActiveState": active,
         "dshSubState": properties.get("SubState", "unknown"),
         "dshMainPid": int(properties.get("MainPID", "0") or "0"),
-        "dshWebReady": reachable, "dshError": error,
+        "dshWebReady": reachable, "dshWebDetail": detail, "dshError": error,
         "dshCheckedUnixMs": int(time.time() * 1000),
+        **win,
+    }
+
+
+def dsh_win_status() -> Dict[str, object]:
+    """Windows desktop client is not a web page, and must not share dsh-wsl's ready bit.
+
+    The client listens on 19387 and rejects a cookieless probe with 401 while its
+    own window is open. 19388 is the cookie proxy that makes that same client
+    reachable as a web page (dsh-win.20220414.xyz). Neither existing implies the other.
+    """
+    code, properties = _unit_show("dsh-win-cookie-proxy.service", user=True)
+    load = properties.get("LoadState", "unknown")
+    active = properties.get("ActiveState", "unknown")
+    client_up, client_detail = _probe_http(_DSH_WIN_CLIENT_URL, 1.0)
+    web_up = False
+    web_detail = ""
+    error = ""
+    if not client_up and code != 0 and load not in ("loaded", "not-found"):
+        error = "Windows 侧状态查询失败"
+    if active == "active":
+        web_up, web_detail = _probe_http(_DSH_WIN_WEB_URL, 1.0)
+        if client_up and not web_up:
+            error = "客户端在运行，网页入口未响应" if web_detail == "未响应" else "客户端在运行，网页入口异常（" + web_detail + "）"
+    elif client_up and load == "not-found":
+        error = "客户端在运行，网页入口未安装"
+    return {
+        "dshWinLoadState": load,
+        "dshWinActiveState": active,
+        "dshWinSubState": properties.get("SubState", "unknown"),
+        "dshWinMainPid": int(properties.get("MainPID", "0") or "0"),
+        "dshWinClientUp": client_up,
+        "dshWinClientDetail": client_detail,
+        "dshWinWebReady": web_up,
+        "dshWinWebDetail": web_detail,
+        "dshWinError": error,
+        "dshWinCheckedUnixMs": int(time.time() * 1000),
     }
 
 
@@ -314,8 +380,14 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dsh-status", action="store_true")
+    parser.add_argument("--dsh-win-status", action="store_true")
     parser.add_argument("--mcp-hub-status", action="store_true")
     args = parser.parse_args()
+    if args.dsh_win_status:
+        result = dsh_win_status()
+        result["schemaVersion"] = SCHEMA_VERSION
+        print(json.dumps(result, ensure_ascii=False), flush=True)
+        return 0
     if args.dsh_status:
         result = dsh_status()
         result["schemaVersion"] = SCHEMA_VERSION

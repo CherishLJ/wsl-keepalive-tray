@@ -33,6 +33,7 @@ namespace WSLKeepAliveTray
         private bool exiting;
         private readonly ToolStripMenuItem themesItem;
         private readonly ToolStripMenuItem dshItem, dshStart, dshStop, dshRestart, dshRefresh, dshWeb;
+        private readonly ToolStripMenuItem winItem, winStart, winStop, winRestart, winRefresh, winWeb;
         private readonly ToolStripMenuItem hubItem, hubStart, hubStop, hubRestart, hubRefresh;
 
         public TrayApplicationContext(
@@ -112,6 +113,16 @@ namespace WSLKeepAliveTray
             dshItem.DropDownOpening += delegate { UpdateDshMenu(); };
             menu.Items.Add(dshItem);
             supervisor.Dsh.Changed += DshChanged;
+            winItem = new ToolStripMenuItem("DSH-Win · 等待状态");
+            winStart = CommandItem("启动网页入口", delegate { supervisor.DshWin.Act("start"); });
+            winStop = CommandItem("停止网页入口", delegate { supervisor.DshWin.Act("stop"); });
+            winRestart = CommandItem("重启网页入口", delegate { supervisor.DshWin.Act("restart"); });
+            winRefresh = CommandItem("刷新 DSH-Win 状态", delegate { supervisor.DshWin.Act("refresh"); });
+            winWeb = CommandItem("打开 DSH-Win 网页", delegate { supervisor.DshWin.OpenWeb(); });
+            winItem.DropDownItems.AddRange(new ToolStripItem[] { winStart, winStop, winRestart, winRefresh, winWeb });
+            winItem.DropDownOpening += delegate { UpdateWinMenu(); };
+            menu.Items.Add(winItem);
+            supervisor.DshWin.Changed += WinChanged;
             hubItem = new ToolStripMenuItem("MCP Hub · 等待状态");
             hubStart = CommandItem("启动 MCP Hub", delegate { supervisor.McpHub.Act("start"); });
             hubStop = CommandItem("停止 MCP Hub", delegate { supervisor.McpHub.Act("stop"); });
@@ -204,6 +215,16 @@ namespace WSLKeepAliveTray
             dshStart.Enabled = dsh.CanStart; dshStop.Enabled = dsh.CanStop;
             dshRestart.Enabled = dsh.CanRestart; dshRefresh.Enabled = dsh.CanRefresh;
             dshWeb.Enabled = dsh.Fresh && dsh.Snapshot.DshWebReady && !dsh.Busy;
+        }
+        private void WinChanged(object sender, EventArgs args) { Ui(UpdateWinMenu); }
+        private void UpdateWinMenu()
+        {
+            DshWinController win = supervisor.DshWin;
+            winItem.Text = win.Status + (win.Busy ? " · 操作中" : "");
+            winItem.ToolTipText = win.Message;
+            winStart.Enabled = win.CanStart; winStop.Enabled = win.CanStop;
+            winRestart.Enabled = win.CanRestart; winRefresh.Enabled = win.CanRefresh;
+            winWeb.Enabled = win.Fresh && win.Snapshot.DshWinWebReady && !win.Busy;
         }
         private void HubChanged(object sender, EventArgs args) { Ui(UpdateHubMenu); }
         private void UpdateHubMenu()
@@ -437,6 +458,7 @@ namespace WSLKeepAliveTray
             supervisor.Dsh.BoardRequested -= OpenTaskBoard;
             if(taskBoard!=null) taskBoard.ExitBoard();
             supervisor.Dsh.Changed -= DshChanged;
+            supervisor.DshWin.Changed -= WinChanged;
             supervisor.McpHub.Changed -= HubChanged;
             ThemeManager.Changed -= OnThemeChanged;
             AppLog.Write("退出托盘，stopWsl=" + stopWsl);

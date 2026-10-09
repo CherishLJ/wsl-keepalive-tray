@@ -30,6 +30,7 @@ namespace WSLKeepAliveTray
         private TrayHealthState lastState;
         private readonly ToolTip detailsTip = new ToolTip();
         private readonly DshPanel dshPanel;
+        private readonly DshWinPanel dshWinPanel;
         private readonly McpHubPanel mcpHubPanel;
 
         public DashboardForm(WslAgentSupervisor agentSupervisor)
@@ -37,8 +38,8 @@ namespace WSLKeepAliveTray
             SuspendLayout();
             supervisor = agentSupervisor;
             Text = "深林印象 · WSL 运行监控";
-            ClientSize = new Size(820, 788);
-            MinimumSize = new Size(760, 738);
+            ClientSize = new Size(820, 872);
+            MinimumSize = new Size(760, 822);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(13, 21, 31);
             ForeColor = Color.FromArgb(233, 239, 244);
@@ -194,10 +195,11 @@ namespace WSLKeepAliveTray
             root.Margin = Padding.Empty;
             root.Padding = Padding.Empty;
             root.ColumnCount = 1;
-            root.RowCount = 6;
+            root.RowCount = 7;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -210,10 +212,12 @@ namespace WSLKeepAliveTray
             root.Controls.Add(cards, 0, 1);
             dshPanel = new DshPanel(supervisor.Dsh);
             root.Controls.Add(dshPanel, 0, 2);
+            dshWinPanel = new DshWinPanel(supervisor.DshWin);
+            root.Controls.Add(dshWinPanel, 0, 3);
             mcpHubPanel = new McpHubPanel(supervisor.McpHub);
-            root.Controls.Add(mcpHubPanel, 0, 3);
-            root.Controls.Add(charts, 0, 4);
-            root.Controls.Add(footer, 0, 5);
+            root.Controls.Add(mcpHubPanel, 0, 4);
+            root.Controls.Add(charts, 0, 5);
+            root.Controls.Add(footer, 0, 6);
             Controls.Add(root);
             FormClosing += OnDashboardClosing;
             ResumeLayout(true);
@@ -253,6 +257,7 @@ namespace WSLKeepAliveTray
             foreach (SparklineControl chart in new[] { cpuChart, memoryChart, networkChart, diskChart }) chart.ApplyTheme(theme);
             ApplyButtons(footer, theme);
             dshPanel.ApplyTheme(theme);
+            dshWinPanel.ApplyTheme(theme);
             mcpHubPanel.ApplyTheme(theme);
             ApplyBadge(lastState);
             ResumeLayout(true);

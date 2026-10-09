@@ -52,7 +52,7 @@ namespace WSLKeepAliveTray
                 if (!Fresh) return "DSH · 状态未知 / 等待遥测";
                 TelemetrySnapshot value = Snapshot;
                 if (value.DshLoadState == "not-found") return "DSH · 未安装服务";
-                if (value.DshActiveState == "active") return value.DshWebReady ? "DSH · 运行中 · 网页正常" : "DSH · 进程运行 · 网页未就绪";
+                if (value.DshActiveState == "active") return value.DshWebReady ? "DSH · 运行中 · 网页可访问" : "DSH · 进程运行 · 网页未响应";
                 if (value.DshActiveState == "inactive") return "DSH · 已停止";
                 if (value.DshActiveState == "failed") return "DSH · 启动失败";
                 if (value.DshActiveState == "activating") return "DSH · 正在启动";
@@ -106,7 +106,7 @@ namespace WSLKeepAliveTray
                         else if(Fresh && ((action == "stop" && Snapshot.DshActiveState == "inactive") ||
                             (action != "stop" && Snapshot.DshActiveState == "active" && Snapshot.DshWebReady)))
                             SetMessage(ActionName(action) + "完成");
-                        else SetMessage("指令已完成，服务或网页尚未就绪；状态会继续更新。");
+                        else SetMessage("指令已完成，服务或网页尚未响应；状态会继续更新。");
                     }
                 }
                 catch(Exception ex) { SetMessage("操作失败：" + ex.Message); }

@@ -46,7 +46,7 @@ class DshTests
             Check(mutations == 3, "refresh is read-only");
             var unavailable = State("active"); unavailable.DshWebReady = false; unavailable.DshCheckedUnixMs = Now+1;
             controller.Accept(unavailable);
-            Check(controller.Status.Contains("网页未就绪"), "process-active does not imply web-ready");
+            Check(controller.Status.Contains("网页未响应"), "process-active does not imply web-ready");
             var stale = new DshController("Ubuntu-24.04", ()=>true);
             var old = State("active"); old.DshCheckedUnixMs -= 60000; stale.Accept(old);
             Check(!stale.Fresh && !stale.CanStop && stale.Status.Contains("未知"), "stale telemetry disables actions");

@@ -43,8 +43,19 @@ namespace WSLKeepAliveTray
         public string DshSubState { get; set; }
         public int DshMainPid { get; set; }
         public bool DshWebReady { get; set; }
+        public string DshWebDetail { get; set; }
         public string DshError { get; set; }
         public long DshCheckedUnixMs { get; set; }
+        public string DshWinLoadState { get; set; }
+        public string DshWinActiveState { get; set; }
+        public string DshWinSubState { get; set; }
+        public int DshWinMainPid { get; set; }
+        public bool DshWinClientUp { get; set; }
+        public string DshWinClientDetail { get; set; }
+        public bool DshWinWebReady { get; set; }
+        public string DshWinWebDetail { get; set; }
+        public string DshWinError { get; set; }
+        public long DshWinCheckedUnixMs { get; set; }
         public string McpHubLoadState { get; set; }
         public string McpHubActiveState { get; set; }
         public string McpHubSubState { get; set; }
