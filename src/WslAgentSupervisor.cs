@@ -34,6 +34,7 @@ namespace WSLKeepAliveTray
         public DshController Dsh { get; private set; }
         public DshWinController DshWin { get; private set; }
         public McpHubController McpHub { get; private set; }
+        public WindowsGpuSampler Gpu { get; private set; }
 
         public event EventHandler<TelemetryEventArgs> TelemetryReceived;
         public event EventHandler<AgentStateEventArgs> StateChanged;
@@ -47,6 +48,7 @@ namespace WSLKeepAliveTray
             Dsh = new DshController(distroName, delegate { return DesiredRunning && AgentRunning; });
             DshWin = new DshWinController(distroName, delegate { return DesiredRunning && AgentRunning; });
             McpHub = new McpHubController(distroName, delegate { return DesiredRunning && AgentRunning; });
+            Gpu = new WindowsGpuSampler();
         }
 
         public string Distro
@@ -419,6 +421,7 @@ namespace WSLKeepAliveTray
                 desiredRunning = false;
             }
             StopAgentProcess();
+            if (Gpu != null) Gpu.Dispose();
         }
     }
 }

@@ -38,7 +38,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $selfTestReport = Join-Path $buildDirectory 'self-test.txt'
-$process = Start-Process -FilePath (Join-Path $buildDirectory 'WSLKeepAliveTray.exe') `
+$builtExe = Join-Path $buildDirectory 'WSLKeepAliveTray.exe'
+$launchExe = $builtExe
+# Starting an exe on \\wsl.localhost makes Windows show "Open File - Security Warning".
+if ($builtExe.StartsWith('\\')) {
+    $launchExe = Join-Path $env:TEMP 'WSLKeepAliveTray-selftest.exe'
+    Copy-Item -LiteralPath $builtExe -Destination $launchExe -Force
+    Unblock-File -LiteralPath $launchExe
+    $selfTestReport = Join-Path $env:TEMP 'WSLKeepAliveTray-self-test.txt'
+}
+$process = Start-Process -FilePath $launchExe `
     -ArgumentList @('--self-test', $selfTestReport) -PassThru -Wait -WindowStyle Hidden
 if ($process.ExitCode -ne 0) {
     Get-Content -LiteralPath $selfTestReport -ErrorAction SilentlyContinue

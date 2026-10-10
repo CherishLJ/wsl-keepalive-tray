@@ -16,10 +16,14 @@ namespace WSLKeepAliveTray
         private readonly MetricCard memoryCard;
         private readonly MetricCard networkCard;
         private readonly MetricCard diskCard;
+        private readonly MetricCard gpuCard;
         private readonly SparklineControl cpuChart;
         private readonly SparklineControl memoryChart;
         private readonly SparklineControl networkChart;
         private readonly SparklineControl diskChart;
+        private readonly SparklineControl gpuChart;
+        private readonly Timer gpuTimer;
+        private long paintedGpuSequence;
         private bool allowClose;
         private Icon currentIcon;
         private readonly Panel header;
@@ -38,8 +42,9 @@ namespace WSLKeepAliveTray
             SuspendLayout();
             supervisor = agentSupervisor;
             Text = "深林印象 · WSL 运行监控";
-            ClientSize = new Size(820, 872);
-            MinimumSize = new Size(760, 822);
+            Size open = OpenSize();
+            ClientSize = open;
+            MinimumSize = open;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(13, 21, 31);
             ForeColor = Color.FromArgb(233, 239, 244);
@@ -120,22 +125,22 @@ namespace WSLKeepAliveTray
             };
             header.Controls.Add(themePicker);
 
-            TableLayoutPanel cards = new TableLayoutPanel();
+            Panel cards = new Panel();
             cards.Dock = DockStyle.Top;
-            cards.Height = 112;
+            cards.Height = 104;
             cards.Padding = new Padding(16, 14, 16, 8);
-            cards.ColumnCount = 4;
-            cards.RowCount = 1;
-            for (int i = 0; i < 4; i++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
 
             cpuCard = new MetricCard("CPU", "--", "等待数据");
             memoryCard = new MetricCard("内存", "--", "等待数据");
             networkCard = new MetricCard("网络吞吐", "--", "等待数据");
             diskCard = new MetricCard("磁盘吞吐", "--", "等待数据");
-            cards.Controls.Add(cpuCard, 0, 0);
-            cards.Controls.Add(memoryCard, 1, 0);
-            cards.Controls.Add(networkCard, 2, 0);
-            cards.Controls.Add(diskCard, 3, 0);
+            gpuCard = new MetricCard("RTX 3060", "--", "等待数据");
+            cards.Controls.Add(cpuCard);
+            cards.Controls.Add(memoryCard);
+            cards.Controls.Add(networkCard);
+            cards.Controls.Add(diskCard);
+            cards.Controls.Add(gpuCard);
+            cards.Resize += delegate { FitMetricCards(cards); };
 
             TableLayoutPanel charts = new TableLayoutPanel();
             charts.Dock = DockStyle.Fill;
@@ -151,10 +156,14 @@ namespace WSLKeepAliveTray
             memoryChart = CreateChart("内存 / Swap", "%", Color.FromArgb(74, 163, 255), Color.FromArgb(167, 126, 255), 100);
             networkChart = CreateChart("网络 ↓ / ↑", " MB/s", Color.FromArgb(47, 211, 211), Color.FromArgb(74, 163, 255), 0);
             diskChart = CreateChart("磁盘读 / 写", " MB/s", Color.FromArgb(92, 224, 126), Color.FromArgb(255, 184, 77), 0);
+            gpuChart = CreateChart("RTX 3060 占用 / 显存", "%", Color.FromArgb(118, 224, 92), Color.FromArgb(255, 138, 92), 100);
             charts.Controls.Add(cpuChart, 0, 0);
             charts.Controls.Add(memoryChart, 1, 0);
             charts.Controls.Add(networkChart, 0, 1);
             charts.Controls.Add(diskChart, 1, 1);
+            gpuTimer = new Timer { Interval = 1000 };
+            gpuTimer.Tick += delegate { RefreshGpu(); };
+            gpuTimer.Start();
 
             footer = new Panel();
             footer.Dock = DockStyle.Bottom;
@@ -190,37 +199,37 @@ namespace WSLKeepAliveTray
             footer.Controls.Add(serviceLine);
             footer.Controls.Add(buttons);
 
+            header.Dock = DockStyle.Fill;
+            cards.Dock = DockStyle.Fill;
+            charts.Dock = DockStyle.Fill;
+            footer.Dock = DockStyle.Fill;
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
             root.Margin = Padding.Empty;
-            root.Padding = Padding.Empty;
             root.ColumnCount = 1;
             root.RowCount = 7;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 104f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64f));
-            header.Dock = DockStyle.Fill;
-            cards.Dock = DockStyle.Fill;
-            charts.Dock = DockStyle.Fill;
-            footer.Dock = DockStyle.Fill;
+            dshPanel = new DshPanel(supervisor.Dsh);
+            dshWinPanel = new DshWinPanel(supervisor.DshWin);
+            mcpHubPanel = new McpHubPanel(supervisor.McpHub);
             root.Controls.Add(header, 0, 0);
             root.Controls.Add(cards, 0, 1);
-            dshPanel = new DshPanel(supervisor.Dsh);
             root.Controls.Add(dshPanel, 0, 2);
-            dshWinPanel = new DshWinPanel(supervisor.DshWin);
             root.Controls.Add(dshWinPanel, 0, 3);
-            mcpHubPanel = new McpHubPanel(supervisor.McpHub);
             root.Controls.Add(mcpHubPanel, 0, 4);
             root.Controls.Add(charts, 0, 5);
             root.Controls.Add(footer, 0, 6);
             Controls.Add(root);
             FormClosing += OnDashboardClosing;
             ResumeLayout(true);
+            FitMetricCards(cards);
             header.Layout += delegate { LayoutHeader(); };
             LayoutHeader();
             ThemeManager.Changed += OnThemeChanged;
@@ -228,6 +237,7 @@ namespace WSLKeepAliveTray
         }
 
         private void OnThemeChanged(object sender, EventArgs args) { ApplyTheme(); }
+
         private void LayoutHeader()
         {
             float scale = CurrentAutoScaleDimensions.Width / 96f;
@@ -253,8 +263,8 @@ namespace WSLKeepAliveTray
             themePicker.SelectedItem = theme;
             updatingTheme = false;
             cpuCard.ApplyTheme(theme); memoryCard.ApplyTheme(theme);
-            networkCard.ApplyTheme(theme); diskCard.ApplyTheme(theme);
-            foreach (SparklineControl chart in new[] { cpuChart, memoryChart, networkChart, diskChart }) chart.ApplyTheme(theme);
+            networkCard.ApplyTheme(theme); diskCard.ApplyTheme(theme); gpuCard.ApplyTheme(theme);
+            foreach (SparklineControl chart in new[] { cpuChart, memoryChart, networkChart, diskChart, gpuChart }) chart.ApplyTheme(theme);
             ApplyButtons(footer, theme);
             dshPanel.ApplyTheme(theme);
             dshWinPanel.ApplyTheme(theme);
@@ -275,6 +285,23 @@ namespace WSLKeepAliveTray
                     button.FlatAppearance.MouseOverBackColor = theme.Header;
                 }
                 ApplyButtons(control, theme);
+            }
+        }
+
+        private static void FitMetricCards(Panel cards)
+        {
+            int count = cards.Controls.Count;
+            if (count == 0) return;
+            int inner = Math.Max(0, cards.ClientSize.Width - cards.Padding.Horizontal);
+            int each = Math.Max(48, inner / count);
+            int x = cards.Padding.Left;
+            int y = cards.Padding.Top;
+            int height = Math.Max(40, cards.ClientSize.Height - cards.Padding.Vertical);
+            foreach (Control card in cards.Controls)
+            {
+                card.Dock = DockStyle.None;
+                card.SetBounds(x, y, each - 8, height);
+                x += each;
             }
         }
 
@@ -333,6 +360,7 @@ namespace WSLKeepAliveTray
             memoryChart.AddPoint((float)snapshot.MemoryPercent, (float)snapshot.SwapPercent);
             networkChart.AddPoint((float)(snapshot.NetworkReceiveBytesPerSecond / 1048576.0), (float)(snapshot.NetworkTransmitBytesPerSecond / 1048576.0));
             diskChart.AddPoint((float)(snapshot.DiskReadBytesPerSecond / 1048576.0), (float)(snapshot.DiskWriteBytesPerSecond / 1048576.0));
+            RefreshGpu();
 
             subtitle.Text = supervisor.Distro + " · 已运行 " + TelemetrySnapshot.FormatDuration(snapshot.UptimeSeconds);
             subtitle.AccessibleDescription = snapshot.Kernel;
@@ -347,6 +375,37 @@ namespace WSLKeepAliveTray
                 snapshot.SshActive ? "✓" : "×",
                 snapshot.WatchdogTimerActive ? "✓" : "×");
             SetState(state);
+        }
+
+        private void RefreshGpu()
+        {
+            if (IsDisposed || gpuCard == null) return;
+            GpuSample gpu = supervisor.Gpu == null ? null : supervisor.Gpu.Latest;
+            if (gpu == null || (!gpu.Available && string.IsNullOrEmpty(gpu.Error)))
+            {
+                gpuCard.SetValue("--", "等待数据");
+                return;
+            }
+            if (!gpu.Available)
+            {
+                gpuCard.SetValue("不可用", string.IsNullOrEmpty(gpu.Error) ? "nvidia-smi 无数据" : gpu.Error);
+                detailsTip.SetToolTip(gpuCard, gpu.Error);
+                return;
+            }
+            gpuCard.SetValue(
+                gpu.UtilizationPercent.ToString("0", CultureInfo.InvariantCulture) + "% · " +
+                gpu.TemperatureC.ToString("0", CultureInfo.InvariantCulture) + "°C",
+                string.Format(CultureInfo.InvariantCulture, "{0:0.0}/{1:0.0} GB · {2:0} W",
+                    gpu.MemoryUsedMiB / 1024.0, gpu.MemoryTotalMiB / 1024.0, gpu.PowerWatts));
+            if (gpu.Sequence != paintedGpuSequence)
+            {
+                gpuChart.AddPoint((float)gpu.UtilizationPercent, (float)gpu.MemoryPercent);
+                paintedGpuSequence = gpu.Sequence;
+            }
+            detailsTip.SetToolTip(gpuCard, string.Format(CultureInfo.InvariantCulture,
+                "{0}\n占用 {1:0}% · 显存带宽 {2:0}%\n显存 {3:0}/{4:0} MiB\n温度 {5:0}°C · 功耗 {6:0.0}/{7:0} W\n核心频率 {8:0} MHz",
+                gpu.Name, gpu.UtilizationPercent, gpu.MemoryUtilizationPercent,
+                gpu.MemoryUsedMiB, gpu.MemoryTotalMiB, gpu.TemperatureC, gpu.PowerWatts, gpu.PowerLimitWatts, gpu.SmClockMHz));
         }
 
         public void SetState(TrayHealthState state)
@@ -385,10 +444,22 @@ namespace WSLKeepAliveTray
             }
         }
 
+        private static Size OpenSize()
+        {
+            Rectangle work = Screen.PrimaryScreen.WorkingArea;
+            int width = Math.Max(640, (int)Math.Round(work.Width * 0.5 * 0.8));
+            int height = Math.Max(480, Math.Min(work.Height - 80, width));
+            return new Size(width, height);
+        }
+
         public void ShowDashboard()
         {
-            if (!Visible) Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Size open = OpenSize();
+            MinimumSize = open;
+            ClientSize = open;
+            CenterToScreen();
+            if (!Visible) Show();
             // An always-hidden ApplicationContext can leave the managed Visible
             // flag set before USER32 applies WS_VISIBLE. Make the native state
             // explicit so tray/menu activation is reliable on Windows 11.
@@ -422,6 +493,7 @@ namespace WSLKeepAliveTray
         protected override void Dispose(bool disposing)
         {
             if (disposing) ThemeManager.Changed -= OnThemeChanged;
+            if (disposing && gpuTimer != null) gpuTimer.Dispose();
             if (disposing) detailsTip.Dispose();
             if (disposing && currentIcon != null)
             {
@@ -440,6 +512,7 @@ namespace WSLKeepAliveTray
             public MetricCard(string title, string value, string detail)
             {
                 Dock = DockStyle.Fill;
+                MinimumSize = new Size(0, 0);
                 Margin = new Padding(6, 0, 6, 0);
                 Padding = new Padding(14, 10, 14, 8);
                 BackColor = Color.FromArgb(24, 34, 47);
@@ -456,16 +529,22 @@ namespace WSLKeepAliveTray
                 valueLabel.Font = new Font("Segoe UI", 11.5f, FontStyle.Bold);
                 valueLabel.ForeColor = Color.FromArgb(237, 242, 246);
                 valueLabel.Location = new Point(13, 31);
-                valueLabel.Size = new Size(180, 25);
-                valueLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
+                valueLabel.Size = new Size(96, 25);
+                valueLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
 
                 detailLabel = new Label();
                 detailLabel.Text = detail;
                 detailLabel.AutoEllipsis = true;
                 detailLabel.ForeColor = Color.FromArgb(143, 160, 174);
                 detailLabel.Location = new Point(15, 61);
-                detailLabel.Size = new Size(178, 20);
-                detailLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
+                detailLabel.Size = new Size(96, 20);
+                detailLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+                Resize += delegate
+                {
+                    int width = Math.Max(48, ClientSize.Width - 28);
+                    valueLabel.Width = width;
+                    detailLabel.Width = width;
+                };
 
                 Controls.Add(titleLabel);
                 Controls.Add(valueLabel);

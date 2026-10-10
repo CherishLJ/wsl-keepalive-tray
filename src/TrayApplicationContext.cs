@@ -23,6 +23,7 @@ namespace WSLKeepAliveTray
         private readonly ToolStripMenuItem diskItem;
         private readonly ToolStripMenuItem networkItem;
         private readonly ToolStripMenuItem serviceItem;
+        private readonly ToolStripMenuItem gpuItem;
         private readonly ToolStripMenuItem startItem;
         private readonly ToolStripMenuItem stopItem;
         private readonly ToolStripMenuItem autostartItem;
@@ -77,8 +78,10 @@ namespace WSLKeepAliveTray
             diskItem = MetricItem("磁盘 读 -- · 写 --");
             networkItem = MetricItem("网络 ↓ -- · ↑ --");
             serviceItem = MetricItem("Docker -- · SSH -- · Watchdog --");
+            gpuItem = MetricItem("RTX 3060 --");
 
             menu.Items.Add(stateItem);
+            menu.Items.Add(gpuItem);
             menu.Items.Add(cpuItem);
             menu.Items.Add(memoryItem);
             menu.Items.Add(diskItem);
@@ -351,6 +354,7 @@ namespace WSLKeepAliveTray
                 diskItem.Text = "磁盘 读 -- · 写 --";
                 networkItem.Text = "网络 ↓ -- · ↑ --";
                 serviceItem.Text = "Docker -- · SSH -- · Watchdog --";
+                UpdateGpuMenu();
                 return;
             }
 
@@ -376,6 +380,24 @@ namespace WSLKeepAliveTray
                 currentSnapshot.ContainersTotal,
                 currentSnapshot.SshActive ? "正常" : "异常",
                 currentSnapshot.WatchdogTimerActive ? "正常" : "未启用");
+            UpdateGpuMenu();
+        }
+
+        private void UpdateGpuMenu()
+        {
+            GpuSample gpu = supervisor.Gpu == null ? null : supervisor.Gpu.Latest;
+            if (gpu == null || !gpu.Available)
+            {
+                gpuItem.Text = gpu != null && !string.IsNullOrEmpty(gpu.Error) ? "RTX 3060 不可用" : "RTX 3060 --";
+                gpuItem.ToolTipText = gpu == null ? "" : gpu.Error;
+                return;
+            }
+            gpuItem.Text = string.Format(CultureInfo.InvariantCulture,
+                "RTX 3060 {0:0}% · {1:0}°C · {2:0.1}/{3:0.1} GB · {4:0} W",
+                gpu.UtilizationPercent, gpu.TemperatureC, gpu.MemoryUsedMiB / 1024.0, gpu.MemoryTotalMiB / 1024.0, gpu.PowerWatts);
+            gpuItem.ToolTipText = string.Format(CultureInfo.InvariantCulture,
+                "{0}\n显存带宽 {1:0}% · {2:0}/{3:0} MiB\n功耗上限 {4:0} W · 核心 {5:0} MHz",
+                gpu.Name, gpu.MemoryUtilizationPercent, gpu.MemoryUsedMiB, gpu.MemoryTotalMiB, gpu.PowerLimitWatts, gpu.SmClockMHz);
         }
 
         private static string StateText(TrayHealthState state)

@@ -199,6 +199,8 @@ namespace WSLKeepAliveTray
                 using (System.Drawing.Icon icon = IconFactory.Create(TrayHealthState.Healthy))
                 {
                     failures += Check(report, icon.Width > 0 && icon.Height > 0, "icon generation");
+                    int halfWidth = (int)Math.Round(1920 * 0.5 * 0.8);
+                    failures += Check(report, halfWidth == 768, "default width is half the screen then 80 percent");
                 }
                 string terminalArguments = WslAgentSupervisor.BuildInteractiveWslArguments("Ubuntu-24.04");
                 failures += Check(report,
@@ -249,6 +251,20 @@ namespace WSLKeepAliveTray
                         @"C:\Program Files\WSLKeepAliveTray\WSLKeepAliveTray.exe",
                         @"C:\Program Files\OtherApp\OtherApp.exe"),
                     "Start menu shortcut ownership rejects unrelated targets");
+                GpuSample gpu;
+                string gpuError;
+                failures += Check(report,
+                    WindowsGpuSampler.TryParse(
+                        "NVIDIA GeForce RTX 3060, 27, 7, 3635, 12288, 39, 35.63, 170, 547",
+                        out gpu, out gpuError) &&
+                    gpu.Available && gpu.Name == "NVIDIA GeForce RTX 3060" &&
+                    Math.Abs(gpu.UtilizationPercent - 27) < 0.001 &&
+                    Math.Abs(gpu.MemoryPercent - 3635.0 * 100 / 12288) < 0.001 &&
+                    Math.Abs(gpu.PowerWatts - 35.63) < 0.001,
+                    "Windows GPU sample parsing");
+                failures += Check(report,
+                    !WindowsGpuSampler.TryParse("NVIDIA GeForce RTX 3060, [N/A]", out gpu, out gpuError),
+                    "Windows GPU sample rejects incomplete output");
             }
             catch (Exception ex)
             {
