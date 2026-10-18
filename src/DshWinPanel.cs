@@ -24,8 +24,8 @@ namespace WSLKeepAliveTray
             status = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
                 Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) };
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
-            start = Button("启动入口", delegate { controller.Act("start"); });
-            stop = Button("停止入口", delegate { controller.Act("stop"); });
+            start = Button("启动", delegate { controller.Act("start"); });
+            stop = Button("停止", delegate { controller.Act("stop"); });
             restart = Button("重启 dsh-win", delegate { controller.Act("restart"); }, 112);
             refresh = Button("刷新", delegate { controller.Act("refresh"); });
             web = Button("打开网页", delegate { controller.OpenWeb(); });

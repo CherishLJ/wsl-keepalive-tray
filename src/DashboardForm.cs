@@ -42,9 +42,11 @@ namespace WSLKeepAliveTray
             SuspendLayout();
             supervisor = agentSupervisor;
             Text = "深林印象 · WSL 运行监控";
-            Size open = OpenSize();
+            // Provisional size only; Shown re-applies it once the window DPI is known.
+            Size open = OpenSize(Screen.PrimaryScreen.WorkingArea, 1f);
             ClientSize = open;
             MinimumSize = open;
+            Shown += delegate { ApplyOpenSize(); };
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(13, 21, 31);
             ForeColor = Color.FromArgb(233, 239, 244);
@@ -209,13 +211,13 @@ namespace WSLKeepAliveTray
             root.ColumnCount = 1;
             root.RowCount = 7;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 104f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60f));
             dshPanel = new DshPanel(supervisor.Dsh);
             dshWinPanel = new DshWinPanel(supervisor.DshWin);
             mcpHubPanel = new McpHubPanel(supervisor.McpHub);
@@ -444,21 +446,46 @@ namespace WSLKeepAliveTray
             }
         }
 
-        private static Size OpenSize()
+        private static Size OpenSize(Rectangle work, float scale)
         {
-            Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            int width = Math.Max(640, (int)Math.Round(work.Width * 0.5 * 0.8));
-            int height = Math.Max(480, Math.Min(work.Height - 80, width));
+            // Width: half the screen width, then 80 percent of that, but never
+            // narrower than the metric row needs, or the card text elides.
+            int width = (int)Math.Round(work.Width * 0.5 * 0.8);
+            int floor = (int)Math.Round(560 * scale);
+            width = Math.Max(floor, Math.Min(width, work.Width - 40));
+            // Height: the layout needs about 1420 px once 200 percent scaling is
+            // applied, which is close to the desktop height itself, so take the
+            // working area. That keeps both chart rows visible.
+            int height = Math.Max((int)Math.Round(360 * scale), work.Height - 48);
             return new Size(width, height);
+        }
+
+        private float WindowScale()
+        {
+            uint dpi = Handle == IntPtr.Zero ? 0 : GetDpiForWindow(Handle);
+            if (dpi < 96) dpi = (uint)DeviceDpi;
+            return dpi / 96f;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+        private void ApplyOpenSize()
+        {
+            // DeviceDpi can still report the pre-scaling 96 here, so ask the
+            // window itself for the real scale.
+            float scale = Math.Max(1f, WindowScale());
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            Size open = OpenSize(work, scale);
+            MinimumSize = open;
+            ClientSize = open;
+            CenterToScreen();
         }
 
         public void ShowDashboard()
         {
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-            Size open = OpenSize();
-            MinimumSize = open;
-            ClientSize = open;
-            CenterToScreen();
+            ApplyOpenSize();
             if (!Visible) Show();
             // An always-hidden ApplicationContext can leave the managed Visible
             // flag set before USER32 applies WS_VISIBLE. Make the native state
