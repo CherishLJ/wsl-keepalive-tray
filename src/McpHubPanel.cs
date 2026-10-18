@@ -26,7 +26,7 @@ namespace WSLKeepAliveTray
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
             start = Button("启动", delegate { controller.Act("start"); });
             stop = Button("停止", delegate { controller.Act("stop"); });
-            restart = Button("重启 Hub", delegate { controller.Act("restart"); });
+            restart = Button("重启 Hub", delegate { controller.Act("restart"); }, 112);
             refresh = Button("刷新", delegate { controller.Act("refresh"); });
             actions.Controls.AddRange(new Control[] { start, stop, restart, refresh });
             detail = new Label { AutoSize = false, Dock = DockStyle.Fill, AutoEllipsis = true,
@@ -43,9 +43,10 @@ namespace WSLKeepAliveTray
             timer.Start();
             UpdateState();
         }
-        private static Button Button(string text, Action action)
+        private static Button Button(string text, Action action) { return Button(text, action, 78); }
+        private static Button Button(string text, Action action, int width)
         {
-            var button = new ActionButton { Text = text, Size = new Size(78, 30), FlatStyle = FlatStyle.Flat,
+            var button = new ActionButton { Text = text, Size = new Size(width, 30), FlatStyle = FlatStyle.Flat,
                 Margin = new Padding(0, 0, 6, 0), Cursor = Cursors.Hand };
             button.Click += delegate { action(); };
             return button;
