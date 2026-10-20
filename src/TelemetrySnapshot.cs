@@ -45,6 +45,7 @@ namespace WSLKeepAliveTray
         public bool DshWebReady { get; set; }
         public string DshWebDetail { get; set; }
         public string DshError { get; set; }
+        public int DshUptimeSeconds { get; set; }
         public long DshCheckedUnixMs { get; set; }
         public string DshWinLoadState { get; set; }
         public string DshWinActiveState { get; set; }
@@ -52,9 +53,11 @@ namespace WSLKeepAliveTray
         public int DshWinMainPid { get; set; }
         public bool DshWinClientUp { get; set; }
         public string DshWinClientDetail { get; set; }
+        public int DshWinClientPort { get; set; }
         public bool DshWinWebReady { get; set; }
         public string DshWinWebDetail { get; set; }
         public string DshWinError { get; set; }
+        public int DshWinUptimeSeconds { get; set; }
         public long DshWinCheckedUnixMs { get; set; }
         public string McpHubLoadState { get; set; }
         public string McpHubActiveState { get; set; }
@@ -62,6 +65,7 @@ namespace WSLKeepAliveTray
         public int McpHubMainPid { get; set; }
         public bool McpHubReady { get; set; }
         public string McpHubError { get; set; }
+        public int McpHubUptimeSeconds { get; set; }
         public long McpHubCheckedUnixMs { get; set; }
 
         public TelemetrySnapshot()

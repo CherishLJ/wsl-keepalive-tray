@@ -28,8 +28,118 @@ SECTOR_SIZE = 512
 # Connection failure, 5xx, and redirects are not "the page is up".
 _WEB_REACHABLE_STATUSES = frozenset({200, 401})
 _DSH_WSL_URL = "http://127.0.0.1:3080/"
-_DSH_WIN_CLIENT_URL = "http://127.0.0.1:19387/"
 _DSH_WIN_WEB_URL = "http://127.0.0.1:19388/"
+# The desktop client no longer binds a fixed port: it picks a loopback port at
+# random each launch (19387 was the old default). Discover it the same way the
+# cookie proxy does -- ask Windows which PID owns "DeepSeek Harness.exe", then
+# take that PID's loopback listeners and keep the one that answers the auth gate.
+_WIN_CLIENT_IMAGE = "DeepSeek Harness.exe"
+_WIN_AUTH_MARK = "dsh web authentication required"
+_WIN_TASKLIST = "/mnt/c/Windows/System32/tasklist.exe"
+_WIN_NETSTAT = "/mnt/c/Windows/System32/netstat.exe"
+_WIN_CLIENT_PORT_TTL = 30.0
+_LOGIN_USER = "jie"
+_LOGIN_UID = "1000"
+
+
+_win_client_port: Optional[int] = None
+_win_client_port_time = 0.0
+
+
+def _windows_available() -> bool:
+    return os.path.exists(_WIN_TASKLIST) and os.path.exists(_WIN_NETSTAT)
+
+
+def _run_windows(command: list[str], timeout: float = 6.0) -> str:
+    """Run a Windows tool and decode its output.
+
+    tasklist/netstat emit GBK on a Chinese Windows install, so decoding as
+    UTF-8 fails outright; fall back through the usual code pages.
+    """
+    try:
+        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   timeout=timeout, check=False)
+    except Exception:
+        return ""
+    for encoding in ("utf-8", "gbk", "cp936", "latin-1"):
+        try:
+            return completed.stdout.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return completed.stdout.decode("utf-8", "replace")
+
+
+def _desktop_client_pids() -> set:
+    output = _run_windows([_WIN_TASKLIST, "/FI", "IMAGENAME eq " + _WIN_CLIENT_IMAGE,
+                           "/FO", "CSV", "/NH"])
+    if not output:
+        return set()
+    pids = set()
+    for line in output.splitlines():
+        fields = [field.strip('"') for field in line.split('","')]
+        if len(fields) >= 2 and fields[0].strip('"').lower() == _WIN_CLIENT_IMAGE.lower():
+            pids.add(fields[1].strip('"'))
+    return pids
+
+
+def _loopback_listeners(pids: set) -> list:
+    output = _run_windows([_WIN_NETSTAT, "-ano", "-p", "TCP"])
+    if not output:
+        return []
+    ports = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[3] != "LISTENING":
+            continue
+        address = fields[1]
+        if not address.startswith("127.0.0.1:"):
+            continue
+        if pids and fields[4] not in pids:
+            continue
+        try:
+            ports.append(int(address.rsplit(":", 1)[1]))
+        except ValueError:
+            continue
+    return ports
+
+
+def _answers_auth_gate(port: int) -> bool:
+    """The web UI answers a cookieless request with 401 plus a known marker."""
+    url = "http://127.0.0.1:" + str(port) + "/"
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(url, timeout=1.5) as response:
+            return response.status == 401 and _WIN_AUTH_MARK in response.read(4096).decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            return False
+        try:
+            body = exc.read(4096).decode("utf-8", "replace")
+        except Exception:
+            return False
+        return _WIN_AUTH_MARK in body
+    except Exception:
+        return False
+
+
+def _discover_win_client_port() -> Optional[int]:
+    """Return the desktop client's current web UI port, or None when it is down."""
+    global _win_client_port, _win_client_port_time
+    if not _windows_available():
+        return None
+    now = time.time()
+    if _win_client_port is not None and now - _win_client_port_time < _WIN_CLIENT_PORT_TTL:
+        return _win_client_port
+    pids = _desktop_client_pids()
+    port = None
+    if pids:
+        for candidate in _loopback_listeners(pids):
+            if _answers_auth_gate(candidate):
+                port = candidate
+                break
+    _win_client_port = port
+    _win_client_port_time = now
+    return port
 
 
 def _probe_http(url: str, timeout: float) -> Tuple[bool, str]:
@@ -48,13 +158,37 @@ def _probe_http(url: str, timeout: float) -> Tuple[bool, str]:
 
 
 def _unit_show(unit: str, user: bool = False) -> Tuple[int, Dict[str, str]]:
-    command = ["show", unit, "--no-pager", "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID"]
+    command = ["show", unit, "--no-pager", "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID",
+               "-p", "ActiveEnterTimestampMonotonic"]
     if user:
         code, output, _ = _systemctl_user(command, timeout=3.0)
     else:
         code, output, _ = _run(["systemctl"] + command, timeout=2.0)
     properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
     return code, properties
+
+
+def _uptime_from_properties(properties: Dict[str, str]) -> int:
+    """Seconds the unit has been active, from its monotonic start stamp.
+
+    Monotonic is immune to wall-clock adjustments, so it stays correct across
+    NTP steps. A unit that is not running reports 0.
+    """
+    if properties.get("ActiveState") != "active":
+        return 0
+    raw = properties.get("ActiveEnterTimestampMonotonic", "0") or "0"
+    try:
+        started_us = int(raw)
+    except ValueError:
+        return 0
+    if started_us <= 0:
+        return 0
+    try:
+        with open("/proc/uptime", "r", encoding="ascii") as handle:
+            uptime_seconds = float(handle.read().split()[0])
+    except Exception:
+        return 0
+    return max(0, int(uptime_seconds - started_us / 1000000.0))
 
 
 def dsh_status() -> Dict[str, object]:
@@ -74,6 +208,7 @@ def dsh_status() -> Dict[str, object]:
         "dshSubState": properties.get("SubState", "unknown"),
         "dshMainPid": int(properties.get("MainPID", "0") or "0"),
         "dshWebReady": reachable, "dshWebDetail": detail, "dshError": error,
+        "dshUptimeSeconds": _uptime_from_properties(properties),
         "dshCheckedUnixMs": int(time.time() * 1000),
         **win,
     }
@@ -82,14 +217,19 @@ def dsh_status() -> Dict[str, object]:
 def dsh_win_status() -> Dict[str, object]:
     """Windows desktop client is not a web page, and must not share dsh-wsl's ready bit.
 
-    The client listens on 19387 and rejects a cookieless probe with 401 while its
-    own window is open. 19388 is the cookie proxy that makes that same client
-    reachable as a web page (dsh-win.20220414.xyz). Neither existing implies the other.
+    The client binds a random loopback port per launch, so its port is discovered
+    from the owning PID instead of assumed. 19388 is the cookie proxy that makes
+    that same client reachable as a web page (dsh-win.20220414.xyz); the proxy
+    discovers the upstream port itself. Neither existing implies the other.
     """
     code, properties = _unit_show("dsh-win-cookie-proxy.service", user=True)
     load = properties.get("LoadState", "unknown")
     active = properties.get("ActiveState", "unknown")
-    client_up, client_detail = _probe_http(_DSH_WIN_CLIENT_URL, 1.0)
+    client_port = _discover_win_client_port()
+    client_up = False
+    client_detail = "未响应"
+    if client_port is not None:
+        client_up, client_detail = _probe_http("http://127.0.0.1:" + str(client_port) + "/", 1.0)
     web_up = False
     web_detail = ""
     error = ""
@@ -108,8 +248,10 @@ def dsh_win_status() -> Dict[str, object]:
         "dshWinMainPid": int(properties.get("MainPID", "0") or "0"),
         "dshWinClientUp": client_up,
         "dshWinClientDetail": client_detail,
+        "dshWinClientPort": client_port or 0,
         "dshWinWebReady": web_up,
         "dshWinWebDetail": web_detail,
+        "dshWinUptimeSeconds": _uptime_from_properties(properties),
         "dshWinError": error,
         "dshWinCheckedUnixMs": int(time.time() * 1000),
     }
@@ -120,8 +262,8 @@ def _systemctl_user(command: list[str], timeout: float) -> Tuple[int, str, str]:
 
     The agent starts as root (mirroring the dsh-wsl system service probes), so
     user units such as mcp-hub.service are first queried directly; when the
-    user bus is unreachable we retry via machinectl shell into the default
-    user (UID 1000, the login user on single-user WSL distros).
+    user bus is unreachable we re-enter the login user with `su -` (WSL has no
+    machinectl, and root cannot connect to another user's session bus).
     """
     base = ["systemctl", "--user"] + command
     env = dict(os.environ)
@@ -129,17 +271,25 @@ def _systemctl_user(command: list[str], timeout: float) -> Tuple[int, str, str]:
     code, output, error = _run_env(base, env, timeout)
     if code == 0 and output:
         return code, output, error
-    fallback = ["machinectl", "shell", "-q", "jie@"] + base
+    fallback = ["su", "-", _LOGIN_USER, "-c",
+                "XDG_RUNTIME_DIR=/run/user/" + _LOGIN_UID + " " + " ".join(_shell_quote(part) for part in base)]
     code2, output2, error2 = _run(fallback, timeout)
     if code2 == 0 or output2:
         return code2, output2, error2
     return code, output, error
 
 
+def _shell_quote(value: str) -> str:
+    if value and all(ch.isalnum() or ch in "-_./=:@+" for ch in value):
+        return value
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
 def mcp_hub_status() -> Dict[str, object]:
     code, output, _ = _systemctl_user([
         "show", "mcp-hub.service", "--no-pager",
         "-p", "LoadState", "-p", "ActiveState", "-p", "SubState", "-p", "MainPID",
+        "-p", "ActiveEnterTimestampMonotonic",
     ], timeout=3.0)
     properties = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
     load = properties.get("LoadState", "unknown")
@@ -171,6 +321,7 @@ def mcp_hub_status() -> Dict[str, object]:
         "mcpHubSubState": properties.get("SubState", "unknown"),
         "mcpHubMainPid": int(properties.get("MainPID", "0") or "0"),
         "mcpHubReady": ready, "mcpHubError": error,
+        "mcpHubUptimeSeconds": _uptime_from_properties(properties),
         "mcpHubCheckedUnixMs": int(time.time() * 1000),
     }
 

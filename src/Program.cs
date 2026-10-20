@@ -201,6 +201,18 @@ namespace WSLKeepAliveTray
                     failures += Check(report, icon.Width > 0 && icon.Height > 0, "icon generation");
                     int halfWidth = (int)Math.Round(1920 * 0.5 * 0.8);
                     failures += Check(report, halfWidth == 768, "default width is half the screen then 80 percent");
+                    DateTime sampleNow = new DateTime(2026, 10, 20, 9, 30, 0, DateTimeKind.Local);
+                    string[] variants = new string[StatusSuffix.VariantCount];
+                    for (int i = 0; i < variants.Length; i++)
+                        variants[i] = StatusSuffix.Build(54995, i, sampleNow);
+                    failures += Check(report, variants[0] == "已运行 15小时 16分", "uptime variant 0");
+                    failures += Check(report, variants[1] == "已持续 15小时 16分", "uptime variant 1");
+                    failures += Check(report, variants[2] == "启动于 10-19 18:13", "uptime variant 2");
+                    failures += Check(report, variants[3] == "已运行 15小时 16分（18:13 启动）", "uptime variant 3");
+                    failures += Check(report, StatusSuffix.Build(0, 0, sampleNow) == "", "stopped service shows no uptime");
+                    failures += Check(report, StatusSuffix.Compact(TimeSpan.FromSeconds(42)) == "42秒", "compact seconds");
+                    failures += Check(report, StatusSuffix.Compact(TimeSpan.FromSeconds(125)) == "2分 05秒", "compact minutes");
+                    failures += Check(report, StatusSuffix.Compact(TimeSpan.FromDays(3) + TimeSpan.FromMinutes(12)) == "3天 00:12", "compact days");
                 }
                 string terminalArguments = WslAgentSupervisor.BuildInteractiveWslArguments("Ubuntu-24.04");
                 failures += Check(report,

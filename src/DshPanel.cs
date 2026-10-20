@@ -8,6 +8,7 @@ namespace WSLKeepAliveTray
     {
         private readonly DshController controller;
         private readonly Label status;
+        private int uptimeVariant;
         private readonly Label detail;
         private readonly Button start, stop, restart, refresh, web;
         private readonly Timer timer;
@@ -22,6 +23,7 @@ namespace WSLKeepAliveTray
             RowStyles.Add(new RowStyle(SizeType.Percent, 45));
             RowStyles.Add(new RowStyle(SizeType.Percent, 55));
             status = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+                Cursor = Cursors.Hand,
                 Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) };
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
             start = Button("启动", delegate { controller.Act("start"); });
@@ -37,6 +39,7 @@ namespace WSLKeepAliveTray
             actionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             actionRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             actionRow.Controls.Add(actions, 0, 0); actionRow.Controls.Add(detail, 1, 0);
+            status.Click += CycleUptimeVariant;
             Controls.Add(status, 0, 0); Controls.Add(actionRow, 0, 1);
             controller.Changed += Changed;
             timer = new Timer { Interval = 2000 };
@@ -52,6 +55,18 @@ namespace WSLKeepAliveTray
             button.Click += delegate { action(); };
             return button;
         }
+        private int UptimeSeconds(TelemetrySnapshot snapshot)
+        {
+            if (!controller.Fresh || snapshot == null) return 0;
+            return snapshot.DshUptimeSeconds;
+        }
+
+        private void CycleUptimeVariant(object sender, EventArgs args)
+        {
+            uptimeVariant = (uptimeVariant + 1) % StatusSuffix.VariantCount;
+            UpdateState();
+        }
+
         private void Changed(object sender, EventArgs args)
         {
             if(IsDisposed || !IsHandleCreated) return;
@@ -61,13 +76,13 @@ namespace WSLKeepAliveTray
         private void UpdateState()
         {
             if(IsDisposed) return;
-            status.Text = controller.Status + "  ·  自动更新";
+            TelemetrySnapshot snapshot = controller.Snapshot;
+            status.Text = StatusSuffix.Compose(controller.Status, UptimeSeconds(snapshot), uptimeVariant, DateTime.Now);
             start.Enabled = controller.CanStart; stop.Enabled = controller.CanStop;
             restart.Enabled = controller.CanRestart; refresh.Enabled = controller.CanRefresh;
             web.Enabled = controller.Fresh && controller.Snapshot.DshWebReady && !controller.Busy;
             detail.Text = controller.Message;
             tip.SetToolTip(detail, controller.Message);
-            TelemetrySnapshot snapshot = controller.Snapshot;
             tip.SetToolTip(status, controller.Fresh ? "dsh-wsl: " + snapshot.DshActiveState + "/" + snapshot.DshSubState +
                 " · PID " + snapshot.DshMainPid +
                 (string.IsNullOrEmpty(snapshot.DshWebDetail) ? "" : " · " + snapshot.DshWebDetail) +

@@ -74,6 +74,67 @@ namespace WSLKeepAliveTray
             if (action != "start" && action != "stop" && action != "restart") throw new ArgumentException("Unsupported DSH-Win action");
             return "-d " + distro + " --exec systemctl --user --no-ask-password " + action + " dsh-win-cookie-proxy.service";
         }
+
+        /// <summary>
+        /// "Restart" has to cover the Windows desktop client too, not just the
+        /// WSL cookie proxy. Restarting only the proxy reported success while the
+        /// client window never moved.
+        /// </summary>
+        private void RestartDesktopThenProxy()
+        {
+            SetMessage("正在重启 dsh-win 桌面客户端…");
+            AppLog.Write("dsh-win restart: handing off to restart-desktop worker");
+            DshCommandResult desktop = DshWinDesktop.Restart(60000);
+            AppLog.Write("dsh-win restart: worker exit=" + desktop.Code + " out=" + FirstLine(desktop.Output, "") + " err=" + FirstLine(desktop.Error, ""));
+            if (desktop.Code != 0)
+            {
+                SetMessage("桌面客户端重启未成功：" + FirstLine(desktop.Error, desktop.Output));
+                return;
+            }
+            SetMessage("桌面客户端已重启，等待新实例上线…");
+            // The worker kills the old client about 5s after hand-off and relaunches
+            // it a few seconds later. Probing immediately would still see the old
+            // process and report a false success, so wait for the port to change
+            // away from the pre-restart value (or for a short settle first).
+            int before = Snapshot == null ? 0 : Snapshot.DshWinClientPort;
+            bool back = DshWinDesktop.WaitUntilClientUp(delegate
+            {
+                DshCommandResult probe = run(Arguments("refresh"), 8000);
+                if (probe.Code != 0) return false;
+                TelemetrySnapshot parsed = TelemetrySnapshot.Parse(probe.Output);
+                if (parsed == null) return false;
+                Accept(parsed);
+                if (!parsed.DshWinClientUp) return false;
+                // Same port as before the restart means the old process is still up.
+                return before <= 0 || parsed.DshWinClientPort != before;
+            }, 60000, 3000);
+
+            AppLog.Write("dsh-win restart: client back=" + back);
+            SetMessage(back ? "桌面客户端已恢复，正在重启网页入口…" : "桌面客户端未在 45 秒内恢复，仍重启网页入口…");
+            DshCommandResult proxy = run(Arguments("restart"), 45000);
+            DshCommandResult check = run(Arguments("refresh"), 8000);
+            if (check.Code == 0) Accept(TelemetrySnapshot.Parse(check.Output));
+            if (proxy.Code != 0)
+            {
+                SetMessage("网页入口重启失败，请刷新状态或查看服务日志。");
+                return;
+            }
+            SetMessage(back && Fresh && Snapshot.DshWinClientUp
+                ? "重启完成：桌面客户端与网页入口都已恢复"
+                : "网页入口已重启；桌面客户端状态待确认，请稍后刷新。");
+        }
+
+        private static string FirstLine(string primary, string fallback)
+        {
+            string text = string.IsNullOrWhiteSpace(primary) ? fallback : primary;
+            if (string.IsNullOrWhiteSpace(text)) return "未知错误";
+            string[] lines = text.Replace("\r", "").Split('\n');
+            foreach (string line in lines)
+            {
+                if (!string.IsNullOrWhiteSpace(line)) return line.Trim();
+            }
+            return "未知错误";
+        }
         public void Act(string action)
         {
             Arguments(action);
@@ -84,6 +145,11 @@ namespace WSLKeepAliveTray
             {
                 try
                 {
+                    if (action == "restart")
+                    {
+                        RestartDesktopThenProxy();
+                        return;
+                    }
                     DshCommandResult result = run(Arguments(action), action == "refresh" ? 8000 : 45000);
                     if (action == "refresh")
                     {
